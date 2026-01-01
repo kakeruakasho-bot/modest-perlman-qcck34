@@ -64,12 +64,13 @@ import {
   CheckCircle2,
   Store,
   Zap,
+  Package, // テイクアウト専門アイコン用
 } from "lucide-react";
 
 // --- Firebase Initialization ---
 
 let firebaseConfig;
-let appId = "lantana_store_v1";
+let appId = "lantana_store_v2";
 let isGeminiEnv = false;
 
 try {
@@ -144,6 +145,16 @@ const INITIAL_MENU_ITEMS = [
     imageColor: "bg-red-100",
     options: [],
   },
+  {
+    name: "空豆甘煮",
+    basePrice: 500,
+    type: "food",
+    hasSets: false,
+    canTakeout: true,
+    isTakeoutOnly: true,
+    imageColor: "bg-green-100",
+    options: [],
+  }, // 初期データ例
   {
     name: "COLDドリンク",
     basePrice: 400,
@@ -294,6 +305,8 @@ export default function App() {
   const [orderDate, setOrderDate] = useState(
     new Date().toISOString().slice(0, 10)
   );
+
+  // ★重要: テイクアウトモード管理
   const [isTakeoutMode, setIsTakeoutMode] = useState(false);
 
   const [selectedOptions, setSelectedOptions] = useState([]);
@@ -318,16 +331,11 @@ export default function App() {
   }, [editingMenu]);
 
   useEffect(() => {
-    if (selectedItem) {
-      // isTakeoutModeは維持
-    }
-  }, [selectedItem]);
-
-  useEffect(() => {
     const script = document.createElement("script");
     script.src = "https://cdn.tailwindcss.com";
     document.head.appendChild(script);
 
+    // アプリアイコン設定
     const iconUrl =
       "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%23ea580c'/%3E%3Ctext x='50' y='70' font-size='50' text-anchor='middle' fill='white'%3E☕️%3C/text%3E%3C/svg%3E";
     let link = document.querySelector("link[rel~='icon']");
@@ -397,43 +405,15 @@ export default function App() {
     );
     const unsubMenu = onSnapshot(
       qMenu,
-      async (snapshot) => {
-        if (snapshot.empty) {
-          try {
-            if (!isGeminiEnv) {
-              const batch = writeBatch(db);
-              INITIAL_MENU_ITEMS.forEach((item) => {
-                const docRef = doc(
-                  collection(
-                    db,
-                    "artifacts",
-                    appId,
-                    "public",
-                    "data",
-                    "menu_items"
-                  )
-                );
-                batch.set(docRef, { ...item, createdAt: serverTimestamp() });
-              });
-              await batch.commit();
-            }
-          } catch (e) {
-            console.log("Init migration skipped");
-          }
-          if (menuItems.length === 0)
-            setMenuItems(
-              INITIAL_MENU_ITEMS.map((m, i) => ({ id: `init-${i}`, ...m }))
-            );
-        } else {
-          const items = snapshot.docs.map((doc) => ({
-            id: doc.id,
-            ...doc.data(),
-          }));
-          items.sort(
-            (a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)
-          );
-          setMenuItems(items);
-        }
+      (snapshot) => {
+        const items = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
+        items.sort(
+          (a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)
+        );
+        setMenuItems(items);
       },
       handleError
     );
@@ -543,7 +523,7 @@ export default function App() {
     }
   };
 
-  // ★重要：過去の注文データを一括修正する機能
+  // 過去の注文データを一括修正する機能
   const fixPastOrdersToTakeout = async (targetName) => {
     if (
       !window.confirm(
@@ -642,10 +622,13 @@ export default function App() {
       )
     )
       return;
+
     const today = new Date().toISOString().split("T")[0];
     const monthLabel = currentMonth.split("-")[1];
+
     try {
       const batch = writeBatch(db);
+
       const docRef1 = doc(
         collection(db, "artifacts", appId, "public", "data", "expenses")
       );
@@ -657,6 +640,7 @@ export default function App() {
         category: "給料分配",
         createdAt: serverTimestamp(),
       });
+
       const docRef2 = doc(
         collection(db, "artifacts", appId, "public", "data", "expenses")
       );
@@ -668,11 +652,12 @@ export default function App() {
         category: "給料分配",
         createdAt: serverTimestamp(),
       });
+
       await batch.commit();
-      alert("給料を経費として記録しました！");
+      alert("給料を経費（給料分配）として記録しました！");
     } catch (err) {
       console.error(err);
-      alert("記録に失敗しました");
+      alert("記録に失敗しました: " + err.message);
     }
   };
 
@@ -685,6 +670,7 @@ export default function App() {
         return `${row.date},${row.sales},${row.sales10},${row.sales8},${row.expenses},${row.takahashiPay},${row.hamadaPay},${row.lantanaPay},${profit},`;
       })
       .join("\n");
+
     const csvContent = "data:text/csv;charset=utf-8,\uFEFF" + header + rows;
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
@@ -713,14 +699,21 @@ export default function App() {
         ? Number(formData.get("priceDessertSet"))
         : null,
       canTakeout: formData.get("canTakeout") === "on",
+      // ★追加：テイクアウト専門フラグ
+      isTakeoutOnly: formData.get("isTakeoutOnly") === "on",
       imageColor: formData.get("imageColor"),
-      options: editingOptions, // 保存時にオプション配列を含める
+      options: editingOptions,
     };
     if (!data.imageColor) {
       if (data.type === "food") data.imageColor = "bg-orange-100";
       if (data.type === "drink") data.imageColor = "bg-blue-50";
       if (data.type === "dessert") data.imageColor = "bg-pink-100";
     }
+    // テイクアウト専門なら canTakeout も true にしておく
+    if (data.isTakeoutOnly) {
+      data.canTakeout = true;
+    }
+
     try {
       if (editingMenu?.id && !editingMenu.id.startsWith("init-")) {
         await updateDoc(
@@ -760,7 +753,7 @@ export default function App() {
     }
   };
 
-  const addToCart = (item, setType = "single", forceTakeout = false) => {
+  const addToCart = (item, setType = "single") => {
     const base = getPrice(item, setType);
     let optionPrice = 0;
     const optionLabels = [];
@@ -770,7 +763,8 @@ export default function App() {
     });
     const price = base + optionPrice;
 
-    const isTakeout = isTakeoutMode;
+    // ★ここがポイント：商品が「テイクアウト専門」なら強制的にテイクアウト扱いにする
+    const isTakeout = item.isTakeoutOnly || isTakeoutMode;
 
     const newItem = {
       tempId: Date.now(),
@@ -780,7 +774,7 @@ export default function App() {
       setLabel: SET_OPTIONS[setType]?.label || "",
       isTakeout: isTakeout,
       price: price,
-      options: optionLabels, // カートにオプション名を記録
+      options: optionLabels,
     };
     setCart([...cart, newItem]);
     setSelectedItem(null);
@@ -854,7 +848,7 @@ export default function App() {
           createdAt: serverTimestamp(),
         }
       );
-      alert("保存しました");
+      alert("日報を保存しました");
       setReportForm({ ...reportForm, note: "", customerCount: "" });
     } catch (err) {
       console.error(err);
@@ -872,6 +866,7 @@ export default function App() {
     if (!user || !fundForm.amount) return;
     const isIncome = fundForm.type === "入金" || fundForm.type === "初期残高";
     const amountVal = Number(fundForm.amount);
+
     try {
       await addDoc(
         collection(db, "artifacts", appId, "public", "data", "funds"),
@@ -882,7 +877,7 @@ export default function App() {
         }
       );
       setFundForm({ ...fundForm, amount: "", note: "" });
-      alert("記録しました");
+      alert("資金移動を記録しました");
     } catch (err) {
       console.error(err);
     }
@@ -1146,13 +1141,19 @@ export default function App() {
         ))}
       </div>
 
+      {/* 期間に応じた月切り替えナビゲーターを表示 (monthの時のみ有効) */}
       {analysisPeriod === "month" && (
         <MonthNavigator currentMonth={currentMonth} onChange={changeMonth} />
       )}
 
       <Card className="p-4">
         <h3 className="font-bold text-stone-600 mb-4 flex items-center gap-2 text-sm">
-          <BarChart3 size={16} /> 売上推移
+          <BarChart3 size={16} />{" "}
+          {analysisPeriod === "week"
+            ? "直近7日間の売上"
+            : analysisPeriod === "month"
+            ? `${currentMonth} の日別売上`
+            : "過去1年の月別売上"}
         </h3>
         <div className="w-full overflow-x-auto">
           <div
@@ -1733,34 +1734,42 @@ export default function App() {
           <div className="border-t border-dashed border-stone-200 pt-2 text-sm space-y-2">
             <div className="flex justify-between items-center">
               <span className="flex items-center gap-1 text-stone-500">
-                <PiggyBank size={14} /> ランタナ貯金 (端数+調整分+税)
+                <PiggyBank size={14} /> ランタナ貯金 (端数+調整分)
               </span>
-              <span className="font-mono font-bold text-stone-700">
-                ¥{aggregated.summary.lantanaSavings.toLocaleString()}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="font-mono font-bold text-stone-700">
+                  ¥{aggregated.summary.lantanaSavings.toLocaleString()}
+                </span>
+                <button
+                  onClick={() =>
+                    transferSavingsToFunds(
+                      aggregated.summary.remainingLantanaSavings
+                    )
+                  }
+                  className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 transition-colors ${
+                    aggregated.summary.remainingLantanaSavings > 0
+                      ? "bg-green-500 text-white hover:bg-green-600 shadow-md"
+                      : "bg-stone-100 text-stone-400 cursor-not-allowed"
+                  }`}
+                  disabled={aggregated.summary.remainingLantanaSavings <= 0}
+                >
+                  <ArrowRightCircle size={12} /> 資金へ移動
+                </button>
+              </div>
             </div>
-            <div className="flex justify-end gap-2 items-center">
-              <span className="text-xs text-stone-400">
-                移動済み: ¥
-                {aggregated.summary.transferredAmount.toLocaleString()}
-              </span>
-              <button
-                onClick={() =>
-                  transferSavingsToFunds(
-                    aggregated.summary.remainingLantanaSavings
-                  )
-                }
-                className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 transition-colors ${
-                  aggregated.summary.remainingLantanaSavings > 0
-                    ? "bg-green-500 text-white hover:bg-green-600 shadow-md"
-                    : "bg-stone-100 text-stone-400 cursor-not-allowed"
-                }`}
-                disabled={aggregated.summary.remainingLantanaSavings <= 0}
-              >
-                <ArrowRightCircle size={12} /> 残金(税・端数)を資金へ
-              </button>
-            </div>
-
+            {aggregated.summary.totalTax > 0 && (
+              <div className="flex justify-end mt-2">
+                <button
+                  onClick={() =>
+                    transferSavingsToFunds(aggregated.summary.totalTax)
+                  }
+                  className="text-xs text-stone-400 underline hover:text-orange-600"
+                >
+                  納税積立(¥{aggregated.summary.totalTax.toLocaleString()}
+                  )も資金へ移動する
+                </button>
+              </div>
+            )}
             {/* 給料記録ボタン */}
             <div className="pt-2 border-t border-dashed border-stone-200 flex justify-end">
               <button
@@ -2076,15 +2085,22 @@ export default function App() {
                   addToCart(item, item.isFixedSet ? "setB" : "single", false);
                 }
               }}
-              disabled={isTakeoutMode && !item.canTakeout} // テイクアウトモード中にテイクアウト不可商品は押せない
+              // ★修正：canTakeoutが未設定（undefined）の場合も押せるようにする
+              disabled={isTakeoutMode && item.canTakeout === false}
               className={`p-4 rounded-xl text-left transition-all active:scale-95 shadow-sm border border-stone-100 flex flex-col justify-between h-32 ${
                 item.imageColor
               } ${
-                isTakeoutMode && !item.canTakeout
+                isTakeoutMode && item.canTakeout === false
                   ? "opacity-30 cursor-not-allowed"
                   : ""
-              }`}
+              } relative`}
             >
+              {/* テイクアウト専門バッジ */}
+              {item.isTakeoutOnly && (
+                <span className="absolute top-2 right-2 bg-green-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                  <Package size={10} /> Takeout Only
+                </span>
+              )}
               <span className="font-bold text-stone-800 leading-tight">
                 {item.name}
               </span>
@@ -2213,7 +2229,9 @@ export default function App() {
                       ¥{getPrice(selectedItem, "single")}
                     </span>
                   </button>
-                  {selectedItem.type === "food" && (
+
+                  {/* ★修正：セット販売が有効（hasSets=true）なら必ず表示（typeがなくても） */}
+                  {selectedItem.hasSets && (
                     <>
                       <button
                         onClick={() =>
@@ -2253,7 +2271,9 @@ export default function App() {
                       </button>
                     </>
                   )}
-                  {selectedItem.type === "dessert" && (
+
+                  {/* デザートセットも同様に表示 */}
+                  {selectedItem.priceDessertSet && (
                     <button
                       onClick={() =>
                         addToCart(selectedItem, "setDessert", isTakeoutMode)
@@ -2329,7 +2349,7 @@ export default function App() {
                 </div>
               )}
 
-              {selectedItem.canTakeout && !isTakeoutMode && (
+              {selectedItem.canTakeout !== false && !isTakeoutMode && (
                 <div className="pt-4 border-t border-stone-100">
                   <p className="text-xs text-center text-stone-400 mb-2">
                     単品でのテイクアウトはこちら
@@ -2410,9 +2430,14 @@ export default function App() {
                       "setB"
                     )})`}
                 </div>
+                {item.isTakeoutOnly && (
+                  <span className="text-[10px] bg-green-100 text-green-700 px-1 rounded ml-1">
+                    Takeout Only
+                  </span>
+                )}
               </div>
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 items-center">
               {/* ★一括修正ボタン: テイクアウト不可の商品以外なら表示 */}
               {item.canTakeout !== false && (
                 <button
@@ -2516,7 +2541,7 @@ export default function App() {
                 )}
               </div>
 
-              <div className="border-t pt-4">
+              <div className="border-t pt-4 space-y-2">
                 <label className="flex items-center gap-2 text-sm font-bold">
                   <input
                     type="checkbox"
@@ -2526,7 +2551,7 @@ export default function App() {
                   />
                   セット販売を有効にする
                 </label>
-                <label className="flex items-center gap-2 text-sm font-bold pt-2">
+                <label className="flex items-center gap-2 text-sm font-bold">
                   <input
                     type="checkbox"
                     name="canTakeout"
@@ -2534,6 +2559,15 @@ export default function App() {
                     className="w-4 h-4"
                   />
                   テイクアウト可能にする
+                </label>
+                <label className="flex items-center gap-2 text-sm font-bold text-green-700 bg-green-50 p-2 rounded">
+                  <input
+                    type="checkbox"
+                    name="isTakeoutOnly"
+                    defaultChecked={editingMenu.isTakeoutOnly}
+                    className="w-4 h-4"
+                  />
+                  テイクアウト専門にする (店内不可)
                 </label>
               </div>
               <div className="flex gap-2 pt-4">
