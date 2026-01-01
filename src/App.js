@@ -66,7 +66,7 @@ import {
 // --- Firebase Initialization ---
 
 let firebaseConfig;
-let appId = "lantana_store_v2";
+let appId = "lantana_store_v1"; // データを引き継ぐためv1
 let isGeminiEnv = false;
 
 try {
@@ -331,16 +331,6 @@ export default function App() {
     }
     link.href = iconUrl;
 
-    let meta = document.querySelector(
-      "meta[name='apple-mobile-web-app-capable']"
-    );
-    if (!meta) {
-      meta = document.createElement("meta");
-      meta.name = "apple-mobile-web-app-capable";
-      document.head.appendChild(meta);
-    }
-    meta.content = "yes";
-
     const timer = setTimeout(() => setShowRetry(true), 10000);
     return () => clearTimeout(timer);
   }, []);
@@ -543,7 +533,7 @@ export default function App() {
     if (amount <= 0) return;
     if (
       !window.confirm(
-        `端数貯金・税金分 ¥${amount.toLocaleString()} を\n「資金（ランタナ預かり金）」に移動しますか？`
+        `端数・税金分 ¥${amount.toLocaleString()} を\n「資金（ランタナ預かり金）」に移動しますか？`
       )
     )
       return;
@@ -566,7 +556,6 @@ export default function App() {
     }
   };
 
-  // 給料を経費として記録する機能
   const recordSalaryAsExpense = async (salaryPerPerson) => {
     if (salaryPerPerson <= 0) return;
     if (
@@ -1327,6 +1316,252 @@ export default function App() {
     </div>
   );
 
+  const renderExpenses = () => (
+    <div className="max-w-2xl mx-auto space-y-6 pb-20">
+      <Card className="p-6">
+        <h2 className="text-xl font-bold text-stone-700 mb-6 flex items-center gap-2">
+          <DollarSign className="text-orange-600" /> 経費の入力
+        </h2>
+        <form onSubmit={submitExpense} className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-stone-500 mb-1">
+                日付
+              </label>
+              <input
+                type="date"
+                required
+                value={expenseForm.date}
+                onChange={(e) =>
+                  setExpenseForm({ ...expenseForm, date: e.target.value })
+                }
+                className="w-full p-2 border border-stone-300 rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-stone-500 mb-1">
+                金額
+              </label>
+              <input
+                type="number"
+                required
+                placeholder="¥0"
+                value={expenseForm.amount}
+                onChange={(e) =>
+                  setExpenseForm({ ...expenseForm, amount: e.target.value })
+                }
+                className="w-full p-2 border border-stone-300 rounded-lg font-mono text-right"
+              />
+              <p className="text-[10px] text-stone-400 text-right mt-1">
+                ※返金の場合はマイナスを入力
+              </p>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-stone-500 mb-1">
+              支払った人（財布）
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              {["高橋", "浜田", "ランタナ"].map((p) => (
+                <button
+                  type="button"
+                  key={p}
+                  onClick={() => setExpenseForm({ ...expenseForm, payer: p })}
+                  className={`p-2 rounded-lg text-sm border ${
+                    expenseForm.payer === p
+                      ? "bg-orange-600 text-white border-orange-600"
+                      : "bg-white text-stone-600 border-stone-200"
+                  }`}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-stone-500 mb-1">
+              分類
+            </label>
+            <select
+              value={expenseForm.category}
+              onChange={(e) =>
+                setExpenseForm({ ...expenseForm, category: e.target.value })
+              }
+              className="w-full p-2 border border-stone-300 rounded-lg bg-white"
+            >
+              <option>仕入</option>
+              <option>消耗品</option>
+              <option>人件費</option>
+              <option>委託費</option>
+              <option>給料分配</option>
+              <option>その他</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-stone-500 mb-1">
+              品目・詳細
+            </label>
+            <input
+              type="text"
+              placeholder="例：米、返金など"
+              value={expenseForm.item}
+              onChange={(e) =>
+                setExpenseForm({ ...expenseForm, item: e.target.value })
+              }
+              className="w-full p-2 border border-stone-300 rounded-lg"
+            />
+          </div>
+          <Button type="submit" className="w-full py-3 mt-4">
+            <PlusCircle size={18} /> 経費を登録
+          </Button>
+        </form>
+      </Card>
+      <div className="space-y-3">
+        <h3 className="font-bold text-stone-500 text-sm pl-2">最近の経費</h3>
+        {expenses.slice(0, 5).map((exp) => (
+          <div
+            key={exp.id}
+            className="bg-white p-3 rounded-lg border border-stone-200 flex justify-between items-center text-sm"
+          >
+            <div>
+              <div className="font-bold text-stone-700">
+                {exp.item || exp.category}
+              </div>
+              <div className="text-xs text-stone-400">
+                {exp.date} / {exp.payer}払
+              </div>
+            </div>
+            <div
+              className={`font-mono font-bold ${
+                exp.amount < 0 ? "text-blue-600" : "text-stone-600"
+              }`}
+            >
+              ¥{Number(exp.amount).toLocaleString()}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  const renderReport = () => (
+    <div className="max-w-2xl mx-auto space-y-6 pb-20">
+      <Card className="p-6">
+        <h2 className="text-xl font-bold text-stone-700 mb-6 flex items-center gap-2">
+          <BookOpen className="text-orange-600" /> 今日の日報
+        </h2>
+        <form onSubmit={submitReport} className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-stone-500 mb-1">
+                日付
+              </label>
+              <input
+                type="date"
+                required
+                value={reportForm.date}
+                onChange={(e) =>
+                  setReportForm({ ...reportForm, date: e.target.value })
+                }
+                className="w-full p-2 border border-stone-300 rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-stone-500 mb-1">
+                天気
+              </label>
+              <div className="flex bg-stone-100 rounded-lg p-1">
+                {["晴れ", "曇り", "雨"].map((w) => (
+                  <button
+                    type="button"
+                    key={w}
+                    onClick={() => setReportForm({ ...reportForm, weather: w })}
+                    className={`flex-1 text-xs py-1.5 rounded-md transition-all ${
+                      reportForm.weather === w
+                        ? "bg-white shadow text-orange-600 font-bold"
+                        : "text-stone-400"
+                    }`}
+                  >
+                    {w}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-stone-500 mb-1">
+              来店数（組/人）
+            </label>
+            <input
+              type="number"
+              value={reportForm.customerCount}
+              onChange={(e) =>
+                setReportForm({ ...reportForm, customerCount: e.target.value })
+              }
+              className="w-full p-2 border border-stone-300 rounded-lg"
+              placeholder="人数を入力"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-stone-500 mb-1">
+              業務メモ・日記
+            </label>
+            <textarea
+              value={reportForm.note}
+              onChange={(e) =>
+                setReportForm({ ...reportForm, note: e.target.value })
+              }
+              className="w-full p-2 border border-stone-300 rounded-lg h-32"
+              placeholder="試作の感想、お客様の様子など..."
+            />
+          </div>
+          <Button type="submit" className="w-full">
+            日報を保存
+          </Button>
+        </form>
+      </Card>
+      <div className="space-y-4">
+        <h3 className="font-bold text-stone-500 pl-2">過去の日報</h3>
+        {reports.length === 0 ? (
+          <p className="text-center text-stone-400 py-8">
+            まだ日報がありません
+          </p>
+        ) : (
+          reports.map((report) => (
+            <Card key={report.id} className="p-4">
+              <div className="flex justify-between items-start mb-2">
+                <div className="flex items-center gap-3">
+                  <span className="font-bold text-lg text-stone-700">
+                    {report.date}
+                  </span>
+                  <span className="text-sm bg-stone-100 px-2 py-1 rounded text-stone-600">
+                    {report.weather} / {report.customerCount}組
+                  </span>
+                </div>
+                <button
+                  onClick={(e) =>
+                    confirmDelete(
+                      e,
+                      "reports",
+                      report.id,
+                      "この日報を削除しますか？"
+                    )
+                  }
+                  className="p-2 bg-stone-100 rounded-lg text-stone-500 hover:text-red-600"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+              <p className="text-stone-600 text-sm whitespace-pre-wrap">
+                {report.note}
+              </p>
+            </Card>
+          ))
+        )}
+      </div>
+    </div>
+  );
+
   const renderHistory = () => (
     <div className="space-y-4 pb-20">
       <div className="flex justify-between items-center mb-4">
@@ -1429,37 +1664,45 @@ export default function App() {
             )}
           </div>
 
-          <div className="border-t border-dashed border-stone-200 pt-2 text-sm space-y-2">
-            <div className="flex justify-between items-center">
+          <div className="border-t border-dashed border-stone-200 pt-2 text-sm">
+            <div className="flex justify-between items-center mb-1">
               <span className="flex items-center gap-1 text-stone-500">
                 <PiggyBank size={14} /> ランタナ貯金 (端数+調整分)
               </span>
-              <span className="font-mono font-bold text-stone-700">
-                ¥{aggregated.summary.lantanaSavings.toLocaleString()}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="font-mono font-bold text-stone-700">
+                  ¥{aggregated.summary.lantanaSavings.toLocaleString()}
+                </span>
+                <button
+                  onClick={() =>
+                    transferSavingsToFunds(
+                      aggregated.summary.remainingLantanaSavings
+                    )
+                  }
+                  className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 transition-colors ${
+                    aggregated.summary.remainingLantanaSavings > 0
+                      ? "bg-green-500 text-white hover:bg-green-600 shadow-md"
+                      : "bg-stone-100 text-stone-400 cursor-not-allowed"
+                  }`}
+                  disabled={aggregated.summary.remainingLantanaSavings <= 0}
+                >
+                  <ArrowRightCircle size={12} /> 資金へ移動
+                </button>
+              </div>
             </div>
-            <div className="flex justify-end gap-2 items-center">
-              <span className="text-xs text-stone-400">
-                移動済み: ¥
-                {aggregated.summary.transferredAmount.toLocaleString()}
-              </span>
-              <button
-                onClick={() =>
-                  transferSavingsToFunds(
-                    aggregated.summary.remainingLantanaSavings
-                  )
-                }
-                className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 transition-colors ${
-                  aggregated.summary.remainingLantanaSavings > 0
-                    ? "bg-green-500 text-white hover:bg-green-600 shadow-md"
-                    : "bg-stone-100 text-stone-400 cursor-not-allowed"
-                }`}
-                disabled={aggregated.summary.remainingLantanaSavings <= 0}
-              >
-                <ArrowRightCircle size={12} /> 残金(税・端数)を資金へ
-              </button>
-            </div>
-
+            {aggregated.summary.totalTax > 0 && (
+              <div className="flex justify-end mt-2">
+                <button
+                  onClick={() =>
+                    transferSavingsToFunds(aggregated.summary.totalTax)
+                  }
+                  className="text-xs text-stone-400 underline hover:text-orange-600"
+                >
+                  納税積立(¥{aggregated.summary.totalTax.toLocaleString()}
+                  )も資金へ移動する
+                </button>
+              </div>
+            )}
             {/* 給料記録ボタン */}
             <div className="pt-2 border-t border-dashed border-stone-200 flex justify-end">
               <button
@@ -1817,11 +2060,12 @@ export default function App() {
                     {item.options && item.options.length > 0 && (
                       <div className="flex flex-wrap gap-1 mt-1">
                         {item.options.map((opt, i) => (
+                          // ★修正：オプションがオブジェクトでも文字列でも対応できるように安全策を追加
                           <span
                             key={i}
                             className="text-[10px] bg-stone-100 text-stone-500 px-1 rounded border border-stone-200"
                           >
-                            {opt}
+                            {typeof opt === "string" ? opt : opt.label}
                           </span>
                         ))}
                       </div>
