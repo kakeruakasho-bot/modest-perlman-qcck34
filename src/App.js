@@ -64,13 +64,13 @@ import {
   CheckCircle2,
   Store,
   Zap,
-  Package, // テイクアウト専門アイコン用
+  Package,
 } from "lucide-react";
 
 // --- Firebase Initialization ---
 
 let firebaseConfig;
-let appId = "lantana_store_v2";
+let appId = "lantana_store_v1";
 let isGeminiEnv = false;
 
 try {
@@ -145,16 +145,6 @@ const INITIAL_MENU_ITEMS = [
     imageColor: "bg-red-100",
     options: [],
   },
-  {
-    name: "空豆甘煮",
-    basePrice: 500,
-    type: "food",
-    hasSets: false,
-    canTakeout: true,
-    isTakeoutOnly: true,
-    imageColor: "bg-green-100",
-    options: [],
-  }, // 初期データ例
   {
     name: "COLDドリンク",
     basePrice: 400,
@@ -308,6 +298,7 @@ export default function App() {
 
   // ★重要: テイクアウトモード管理
   const [isTakeoutMode, setIsTakeoutMode] = useState(false);
+  const [expenseType, setExpenseType] = useState("expense");
 
   const [selectedOptions, setSelectedOptions] = useState([]);
   const [editingOptions, setEditingOptions] = useState([]);
@@ -329,6 +320,12 @@ export default function App() {
       setEditingOptions([]);
     }
   }, [editingMenu]);
+
+  useEffect(() => {
+    if (selectedItem) {
+      // isTakeoutModeは維持
+    }
+  }, [selectedItem]);
 
   useEffect(() => {
     const script = document.createElement("script");
@@ -587,11 +584,11 @@ export default function App() {
     }
   };
 
-  const transferSavingsToFunds = async (amount) => {
+  const transferToFunds = async (amount, typeName) => {
     if (amount <= 0) return;
     if (
       !window.confirm(
-        `端数貯金・税金分 ¥${amount.toLocaleString()} を\n「資金（ランタナ預かり金）」に移動しますか？`
+        `${typeName} ¥${amount.toLocaleString()} を\n「資金（ランタナ預かり金）」に移動しますか？`
       )
     )
       return;
@@ -603,11 +600,11 @@ export default function App() {
           date: new Date().toISOString().split("T")[0],
           amount: amount,
           type: "入金",
-          note: `${currentMonth}分 帳簿より残金繰入`,
+          note: `${currentMonth}分 ${typeName}繰入`,
           createdAt: serverTimestamp(),
         }
       );
-      alert("資金に移動しました！\n「資金」タブで確認できます。");
+      alert("資金に移動しました！");
     } catch (err) {
       console.error(err);
       alert("移動に失敗しました");
@@ -699,10 +696,9 @@ export default function App() {
         ? Number(formData.get("priceDessertSet"))
         : null,
       canTakeout: formData.get("canTakeout") === "on",
-      // ★追加：テイクアウト専門フラグ
       isTakeoutOnly: formData.get("isTakeoutOnly") === "on",
       imageColor: formData.get("imageColor"),
-      options: editingOptions,
+      options: editingOptions, // 保存時にオプション配列を含める
     };
     if (!data.imageColor) {
       if (data.type === "food") data.imageColor = "bg-orange-100";
@@ -763,7 +759,6 @@ export default function App() {
     });
     const price = base + optionPrice;
 
-    // ★ここがポイント：商品が「テイクアウト専門」なら強制的にテイクアウト扱いにする
     const isTakeout = item.isTakeoutOnly || isTakeoutMode;
 
     const newItem = {
@@ -815,16 +810,22 @@ export default function App() {
   const submitExpense = async (e) => {
     e.preventDefault();
     if (!user || !expenseForm.amount) return;
+    const finalAmount =
+      expenseType === "refund"
+        ? -Math.abs(Number(expenseForm.amount))
+        : Math.abs(Number(expenseForm.amount));
+
     try {
       await addDoc(
         collection(db, "artifacts", appId, "public", "data", "expenses"),
         {
           ...expenseForm,
-          amount: Number(expenseForm.amount),
+          amount: finalAmount,
           createdAt: serverTimestamp(),
         }
       );
       setExpenseForm({ ...expenseForm, item: "", amount: "" });
+      setExpenseType("expense");
     } catch (err) {
       console.error(err);
     }
@@ -866,7 +867,6 @@ export default function App() {
     if (!user || !fundForm.amount) return;
     const isIncome = fundForm.type === "入金" || fundForm.type === "初期残高";
     const amountVal = Number(fundForm.amount);
-
     try {
       await addDoc(
         collection(db, "artifacts", appId, "public", "data", "funds"),
@@ -972,7 +972,6 @@ export default function App() {
       dataByDate[d].expenses += exp.amount;
       dataByDate[d].expenseDetails.push(exp);
 
-      // 給料分配を除外して利益計算
       if (exp.category !== "給料分配") {
         totalExpensesAll += exp.amount;
       }
@@ -986,35 +985,43 @@ export default function App() {
       b.date.localeCompare(a.date)
     );
 
-    // 税金計算（厳密版）
     const tax8 = Math.floor((totalTax8Sales / 1.08) * 0.08);
     const tax10 = Math.floor((totalTax10Sales / 1.1) * 0.1);
     const totalTax = tax8 + tax10;
 
-    // 給料計算：売上(税込) - 経費 - 消費税(預り分) = 税引後利益
     const profitBeforeTax = totalSalesAll - totalExpensesAll;
     const profitAfterTax = profitBeforeTax - totalTax;
 
     const baseProfit = Math.max(0, profitAfterTax);
 
-    // 1000円未満切り捨てで給料計算
     const defaultSalaryPerPerson = Math.floor(baseProfit / 2 / 1000) * 1000;
     const finalSalaryPerPerson =
       manualSalary !== null ? manualSalary : defaultSalaryPerPerson;
 
-    // ランタナ貯金（端数＋調整分＋税金分）
     const lantanaSavings = profitBeforeTax - finalSalaryPerPerson * 2;
 
-    const transferredAmount = funds
+    const transferredLantanaSavings = funds
       .filter(
         (f) =>
           f.date.startsWith(currentMonth) &&
           f.type === "入金" &&
-          f.note.includes("繰入")
+          f.note.includes("端数")
       )
       .reduce((sum, f) => sum + f.amount, 0);
 
-    const remainingLantanaSavings = lantanaSavings - transferredAmount;
+    const transferredTax = funds
+      .filter(
+        (f) =>
+          f.date.startsWith(currentMonth) &&
+          f.type === "入金" &&
+          f.note.includes("税金")
+      )
+      .reduce((sum, f) => sum + f.amount, 0);
+
+    const savingOnly = lantanaSavings - totalTax;
+
+    const remainingLantanaSavings = savingOnly - transferredLantanaSavings;
+    const remainingTax = totalTax - transferredTax;
 
     const totalFundsAdded = funds.reduce((sum, f) => sum + f.amount, 0);
     const totalLantanaExpenses = expenses
@@ -1024,23 +1031,30 @@ export default function App() {
 
     const totalNetSales = totalSalesAll - totalTax;
 
+    const totalTaxFund = funds
+      .filter((f) => f.note.includes("税金"))
+      .reduce((sum, f) => sum + f.amount, 0);
+
     return {
       daily: sortedData,
       summary: {
         totalSales: totalSalesAll,
         totalExpenses: totalExpensesAll,
-        profit: profitBeforeTax, // 税込利益
+        profit: profitBeforeTax,
         salaryPerPerson: finalSalaryPerPerson,
         defaultSalaryPerPerson,
-        lantanaSavings,
+        lantanaSavings: savingOnly,
         remainingLantanaSavings,
-        transferredAmount,
+        remainingTax,
+        transferredLantanaSavings,
+        transferredTax,
         totalTax,
         tax8,
         tax10,
         totalNetSales,
       },
       fundBalance: currentFundBalance,
+      totalTaxFund,
       menuRanking: getMenuRanking(targetOrders),
     };
   };
@@ -1072,10 +1086,12 @@ export default function App() {
         const d = new Date(today);
         d.setDate(today.getDate() - i);
         const dateStr = d.toISOString().split("T")[0];
-        const dayData = aggregated.daily.find((row) => row.date === dateStr);
+        const val = orders
+          .filter((o) => o.date === dateStr)
+          .reduce((s, o) => s + o.total, 0);
         data.push({
           label: `${d.getMonth() + 1}/${d.getDate()}`,
-          value: dayData ? dayData.sales : 0,
+          value: val,
           fullDate: dateStr,
         });
       }
@@ -1083,14 +1099,13 @@ export default function App() {
       const [y, m] = currentMonth.split("-");
       const daysInMonth = new Date(y, m, 0).getDate();
       for (let i = 1; i <= daysInMonth; i++) {
-        const dateStr = `${currentMonth}-${String(i).padStart(2, "0")}`;
-        const dayData = aggregated.daily.find((row) => row.date === dateStr);
-        data.push({
-          label: `${i}`,
-          fullLabel: `${m}/${i}`,
-          value: dayData ? dayData.sales : 0,
-          fullDate: dateStr,
-        });
+        const dateStr = `${y}-${String(m).padStart(2, "0")}-${String(
+          i
+        ).padStart(2, "0")}`;
+        const val = orders
+          .filter((o) => o.date === dateStr)
+          .reduce((s, o) => s + o.total, 0);
+        data.push({ label: `${i}`, value: val, fullDate: dateStr });
       }
     } else if (analysisPeriod === "year") {
       for (let i = 11; i >= 0; i--) {
@@ -1098,11 +1113,9 @@ export default function App() {
         const monthStr = `${d.getFullYear()}-${String(
           d.getMonth() + 1
         ).padStart(2, "0")}`;
-
         const monthlySales = orders
-          .filter((order) => order.date.startsWith(monthStr))
-          .reduce((sum, order) => sum + order.total, 0);
-
+          .filter((o) => o.date.startsWith(monthStr))
+          .reduce((s, o) => s + o.total, 0);
         data.push({
           label: `${d.getMonth() + 1}月`,
           value: monthlySales,
@@ -1111,16 +1124,16 @@ export default function App() {
       }
     }
     return data;
-  }, [aggregated.daily, analysisPeriod, currentMonth, orders]);
+  }, [analysisPeriod, currentMonth, orders]);
 
   // --- Render Functions ---
+  // すべてのRender関数をここ（returnより前）に定義します
 
   const renderAnalysis = () => (
     <div className="max-w-2xl mx-auto space-y-6 pb-20">
       <h2 className="text-xl font-bold text-stone-700 mb-6 flex items-center gap-2">
         <TrendingUp className="text-orange-600" /> 経営分析
       </h2>
-
       <div className="flex bg-stone-100 p-1 rounded-lg mb-4">
         {["week", "month", "year"].map((p) => (
           <button
@@ -1140,20 +1153,12 @@ export default function App() {
           </button>
         ))}
       </div>
-
-      {/* 期間に応じた月切り替えナビゲーターを表示 (monthの時のみ有効) */}
       {analysisPeriod === "month" && (
         <MonthNavigator currentMonth={currentMonth} onChange={changeMonth} />
       )}
-
       <Card className="p-4">
         <h3 className="font-bold text-stone-600 mb-4 flex items-center gap-2 text-sm">
-          <BarChart3 size={16} />{" "}
-          {analysisPeriod === "week"
-            ? "直近7日間の売上"
-            : analysisPeriod === "month"
-            ? `${currentMonth} の日別売上`
-            : "過去1年の月別売上"}
+          <BarChart3 size={16} /> 売上推移
         </h3>
         <div className="w-full overflow-x-auto">
           <div
@@ -1218,11 +1223,6 @@ export default function App() {
               </div>
             </div>
           ))}
-          {aggregated.menuRanking.length === 0 && (
-            <p className="text-xs text-stone-400 text-center">
-              データがありません
-            </p>
-          )}
         </div>
       </Card>
     </div>
@@ -1239,23 +1239,22 @@ export default function App() {
         </div>
         <div className="mt-4 pt-3 border-t border-green-200 text-xs text-stone-500">
           <div className="flex justify-between items-center mb-1">
-            <span>うち 納税予定額 (消費税)</span>
+            <span>うち 税金積立累計</span>
             <span className="font-bold text-red-500">
-              ¥{aggregated.summary.totalTax.toLocaleString()}
+              ¥{aggregated.totalTaxFund.toLocaleString()}
             </span>
           </div>
           <div className="flex justify-between items-center">
-            <span>実質残高 (納税後)</span>
+            <span>実質残高 (税抜)</span>
             <span className="font-bold text-stone-700">
               ¥
               {(
-                aggregated.fundBalance - aggregated.summary.totalTax
+                aggregated.fundBalance - aggregated.totalTaxFund
               ).toLocaleString()}
             </span>
           </div>
         </div>
       </div>
-
       <Card className="p-6">
         <h2 className="text-xl font-bold text-stone-700 mb-6 flex items-center gap-2">
           <RefreshCw className="text-orange-600" /> 資金の移動を記録
@@ -1293,339 +1292,200 @@ export default function App() {
               </select>
             </div>
           </div>
-          <div>
-            <label className="block text-xs font-bold text-stone-500 mb-1">
-              金額
-            </label>
-            <input
-              type="number"
-              required
-              placeholder="¥0"
-              value={fundForm.amount}
-              onChange={(e) =>
-                setFundForm({ ...fundForm, amount: e.target.value })
-              }
-              className="w-full p-2 border border-stone-300 rounded-lg font-mono text-right"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-stone-500 mb-1">
-              詳細・メモ
-            </label>
-            <input
-              type="text"
-              placeholder="例：端数貯金から入金、米代の精算など"
-              value={fundForm.note}
-              onChange={(e) =>
-                setFundForm({ ...fundForm, note: e.target.value })
-              }
-              className="w-full p-2 border border-stone-300 rounded-lg"
-            />
-          </div>
-          <Button
-            type="submit"
-            variant={fundForm.type === "出金" ? "danger" : "success"}
-            className="w-full py-3 mt-4"
-          >
-            {fundForm.type === "出金"
-              ? "出金を記録（減らす）"
-              : "入金を記録（増やす）"}
-          </Button>
+          <input
+            type="number"
+            required
+            placeholder="金額"
+            value={fundForm.amount}
+            onChange={(e) =>
+              setFundForm({ ...fundForm, amount: e.target.value })
+            }
+            className="border p-2 rounded w-full"
+          />
+          <input
+            type="text"
+            placeholder="メモ"
+            value={fundForm.note}
+            onChange={(e) => setFundForm({ ...fundForm, note: e.target.value })}
+            className="border p-2 rounded w-full"
+          />
+          <Button type="submit">記録</Button>
         </form>
       </Card>
-
-      <div className="space-y-3">
-        <h3 className="font-bold text-stone-500 text-sm pl-2">資金移動履歴</h3>
-        {funds.length === 0 ? (
-          <p className="text-center text-stone-400 text-sm py-4">
-            履歴がありません
-          </p>
-        ) : (
-          funds.map((f) => (
-            <div
-              key={f.id}
-              className="bg-white p-3 rounded-lg border border-stone-200 flex justify-between items-center text-sm"
-            >
-              <div>
-                <div className="font-bold text-stone-700 flex items-center gap-2">
-                  {f.amount >= 0 ? (
-                    <ArrowUpCircle size={16} className="text-green-500" />
-                  ) : (
-                    <ArrowDownCircle size={16} className="text-red-500" />
-                  )}
-                  {f.type}
-                </div>
-                <div className="text-xs text-stone-400">
-                  {f.date} / {f.note}
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <span
-                  className={`font-mono font-bold ${
-                    f.amount >= 0 ? "text-green-600" : "text-red-600"
-                  }`}
-                >
-                  {f.amount >= 0 ? "+" : ""}¥{Number(f.amount).toLocaleString()}
-                </span>
-                <button
-                  onClick={(e) =>
-                    confirmDelete(e, "funds", f.id, "この記録を削除しますか？")
-                  }
-                  className="p-2 bg-stone-100 rounded-lg text-stone-500 hover:text-red-600"
-                >
-                  <Trash2 size={16} />
-                </button>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-    </div>
-  );
-
-  const renderExpenses = () => (
-    <div className="max-w-2xl mx-auto space-y-6 pb-20">
-      <Card className="p-6">
-        <h2 className="text-xl font-bold text-stone-700 mb-6 flex items-center gap-2">
-          <DollarSign className="text-orange-600" /> 経費の入力
-        </h2>
-        <form onSubmit={submitExpense} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-stone-500 mb-1">
-                日付
-              </label>
-              <input
-                type="date"
-                required
-                value={expenseForm.date}
-                onChange={(e) =>
-                  setExpenseForm({ ...expenseForm, date: e.target.value })
-                }
-                className="w-full p-2 border border-stone-300 rounded-lg"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-stone-500 mb-1">
-                金額
-              </label>
-              <input
-                type="number"
-                required
-                placeholder="¥0"
-                value={expenseForm.amount}
-                onChange={(e) =>
-                  setExpenseForm({ ...expenseForm, amount: e.target.value })
-                }
-                className="w-full p-2 border border-stone-300 rounded-lg font-mono text-right"
-              />
-              <p className="text-[10px] text-stone-400 text-right mt-1">
-                ※返金の場合はマイナスを入力
-              </p>
-            </div>
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-stone-500 mb-1">
-              支払った人（財布）
-            </label>
-            <div className="grid grid-cols-3 gap-2">
-              {["高橋", "浜田", "ランタナ"].map((p) => (
-                <button
-                  type="button"
-                  key={p}
-                  onClick={() => setExpenseForm({ ...expenseForm, payer: p })}
-                  className={`p-2 rounded-lg text-sm border ${
-                    expenseForm.payer === p
-                      ? "bg-orange-600 text-white border-orange-600"
-                      : "bg-white text-stone-600 border-stone-200"
-                  }`}
-                >
-                  {p}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-stone-500 mb-1">
-              分類
-            </label>
-            <select
-              value={expenseForm.category}
-              onChange={(e) =>
-                setExpenseForm({ ...expenseForm, category: e.target.value })
-              }
-              className="w-full p-2 border border-stone-300 rounded-lg bg-white"
-            >
-              <option>仕入</option>
-              <option>消耗品</option>
-              <option>人件費</option>
-              <option>委託費</option>
-              <option>給料分配</option>
-              <option>その他</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-stone-500 mb-1">
-              品目・詳細
-            </label>
-            <input
-              type="text"
-              placeholder="例：米、返金など"
-              value={expenseForm.item}
-              onChange={(e) =>
-                setExpenseForm({ ...expenseForm, item: e.target.value })
-              }
-              className="w-full p-2 border border-stone-300 rounded-lg"
-            />
-          </div>
-          <Button type="submit" className="w-full py-3 mt-4">
-            <PlusCircle size={18} /> 経費を登録
-          </Button>
-        </form>
-      </Card>
-      <div className="space-y-3">
-        <h3 className="font-bold text-stone-500 text-sm pl-2">最近の経費</h3>
-        {expenses.slice(0, 5).map((exp) => (
+      <div className="space-y-2">
+        {funds.map((f) => (
           <div
-            key={exp.id}
-            className="bg-white p-3 rounded-lg border border-stone-200 flex justify-between items-center text-sm"
+            key={f.id}
+            className="flex justify-between p-3 bg-white border rounded"
           >
-            <div>
-              <div className="font-bold text-stone-700">
-                {exp.item || exp.category}
-              </div>
-              <div className="text-xs text-stone-400">
-                {exp.date} / {exp.payer}払
-              </div>
-            </div>
-            <div
-              className={`font-mono font-bold ${
-                exp.amount < 0 ? "text-blue-600" : "text-stone-600"
-              }`}
-            >
-              ¥{Number(exp.amount).toLocaleString()}
-            </div>
+            <span>
+              {f.date} {f.note}
+            </span>
+            <span>
+              {f.amount}{" "}
+              <button onClick={(e) => confirmDelete(e, "funds", f.id, "削除?")}>
+                <Trash2 size={14} />
+              </button>
+            </span>
           </div>
         ))}
       </div>
     </div>
   );
 
-  const renderReport = () => (
+  const renderMenuSettings = () => (
     <div className="max-w-2xl mx-auto space-y-6 pb-20">
-      <Card className="p-6">
-        <h2 className="text-xl font-bold text-stone-700 mb-6 flex items-center gap-2">
-          <BookOpen className="text-orange-600" /> 今日の日報
-        </h2>
-        <form onSubmit={submitReport} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-stone-500 mb-1">
-                日付
-              </label>
-              <input
-                type="date"
-                required
-                value={reportForm.date}
-                onChange={(e) =>
-                  setReportForm({ ...reportForm, date: e.target.value })
-                }
-                className="w-full p-2 border border-stone-300 rounded-lg"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-stone-500 mb-1">
-                天気
-              </label>
-              <div className="flex bg-stone-100 rounded-lg p-1">
-                {["晴れ", "曇り", "雨"].map((w) => (
-                  <button
-                    type="button"
-                    key={w}
-                    onClick={() => setReportForm({ ...reportForm, weather: w })}
-                    className={`flex-1 text-xs py-1.5 rounded-md transition-all ${
-                      reportForm.weather === w
-                        ? "bg-white shadow text-orange-600 font-bold"
-                        : "text-stone-400"
-                    }`}
-                  >
-                    {w}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-stone-500 mb-1">
-              来店数（組/人）
-            </label>
-            <input
-              type="number"
-              value={reportForm.customerCount}
-              onChange={(e) =>
-                setReportForm({ ...reportForm, customerCount: e.target.value })
-              }
-              className="w-full p-2 border border-stone-300 rounded-lg"
-              placeholder="人数を入力"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-stone-500 mb-1">
-              業務メモ・日記
-            </label>
-            <textarea
-              value={reportForm.note}
-              onChange={(e) =>
-                setReportForm({ ...reportForm, note: e.target.value })
-              }
-              className="w-full p-2 border border-stone-300 rounded-lg h-32"
-              placeholder="試作の感想、お客様の様子など..."
-            />
-          </div>
-          <Button type="submit" className="w-full">
-            日報を保存
-          </Button>
-        </form>
-      </Card>
-      <div className="space-y-4">
-        <h3 className="font-bold text-stone-500 pl-2">過去の日報</h3>
-        {reports.length === 0 ? (
-          <p className="text-center text-stone-400 py-8">
-            まだ日報がありません
-          </p>
-        ) : (
-          reports.map((report) => (
-            <Card key={report.id} className="p-4">
-              <div className="flex justify-between items-start mb-2">
-                <div className="flex items-center gap-3">
-                  <span className="font-bold text-lg text-stone-700">
-                    {report.date}
-                  </span>
-                  <span className="text-sm bg-stone-100 px-2 py-1 rounded text-stone-600">
-                    {report.weather} / {report.customerCount}組
-                  </span>
-                </div>
-                <button
-                  onClick={(e) =>
-                    confirmDelete(
-                      e,
-                      "reports",
-                      report.id,
-                      "この日報を削除しますか？"
-                    )
-                  }
-                  className="p-2 bg-stone-100 rounded-lg text-stone-500 hover:text-red-600"
-                >
-                  <Trash2 size={16} />
-                </button>
-              </div>
-              <p className="text-stone-600 text-sm whitespace-pre-wrap">
-                {report.note}
-              </p>
-            </Card>
-          ))
-        )}
+      <div className="flex justify-between mb-4">
+        <h2 className="font-bold">メニュー管理</h2>
+        <Button onClick={() => setEditingMenu({})}>新規追加</Button>
       </div>
+      <div className="space-y-2">
+        {menuItems.map((m) => (
+          <div
+            key={m.id}
+            className="flex justify-between p-3 bg-white border rounded items-center"
+          >
+            <div>{m.name}</div>
+            <div className="flex gap-2 items-center">
+              {/* 一括修正ボタンは常に表示 */}
+              <button
+                onClick={() => fixPastOrdersToTakeout(m.name)}
+                className="p-2 text-yellow-500 hover:text-yellow-600 bg-yellow-50 rounded-lg"
+              >
+                <Zap size={16} />
+              </button>
+              <button
+                onClick={() => setEditingMenu(m)}
+                className="p-2 text-stone-400 hover:text-orange-600"
+              >
+                <Edit2 size={16} />
+              </button>
+              <button
+                onClick={() => deleteMenuItem(m.id)}
+                className="p-2 text-stone-400 hover:text-red-600"
+              >
+                <Trash2 size={16} />
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+      {editingMenu && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4">
+          <div className="bg-white p-6 rounded-xl w-full max-w-md h-[90vh] overflow-y-auto">
+            <h3 className="font-bold mb-4">メニュー編集</h3>
+            <form onSubmit={saveMenuItem} className="space-y-4">
+              <input
+                name="name"
+                defaultValue={editingMenu.name}
+                placeholder="名前"
+                className="border p-2 w-full rounded"
+                required
+              />
+              <input
+                name="basePrice"
+                type="number"
+                defaultValue={editingMenu.basePrice}
+                placeholder="価格"
+                className="border p-2 w-full rounded"
+                required
+              />
+              <div className="border-t pt-4">
+                <label className="text-sm font-bold">オプション設定</label>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setEditingOptions([
+                      ...editingOptions,
+                      { label: "", price: 0 },
+                    ])
+                  }
+                  className="text-xs bg-gray-100 px-2 py-1 ml-2 rounded"
+                >
+                  追加
+                </button>
+                {editingOptions.map((opt, i) => (
+                  <div key={i} className="flex gap-2 mt-2">
+                    <input
+                      value={opt.label}
+                      onChange={(e) => {
+                        const n = [...editingOptions];
+                        n[i].label = e.target.value;
+                        setEditingOptions(n);
+                      }}
+                      className="border p-1 w-full rounded"
+                      placeholder="名称(大盛など)"
+                    />
+                    <input
+                      type="number"
+                      value={opt.price}
+                      onChange={(e) => {
+                        const n = [...editingOptions];
+                        n[i].price = Number(e.target.value);
+                        setEditingOptions(n);
+                      }}
+                      className="border p-1 w-20 rounded"
+                      placeholder="円"
+                    />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setEditingOptions(
+                          editingOptions.filter((_, idx) => idx !== i)
+                        )
+                      }
+                      className="text-red-500"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                ))}
+                {editingOptions.length === 0 && (
+                  <p className="text-xs text-gray-400 mt-1">オプションなし</p>
+                )}
+              </div>
+              <div className="border-t pt-4 space-y-2">
+                <label className="flex items-center gap-2 text-sm font-bold">
+                  <input
+                    type="checkbox"
+                    name="hasSets"
+                    defaultChecked={editingMenu.hasSets}
+                    className="w-4 h-4"
+                  />
+                  セット販売を有効にする
+                </label>
+                <label className="flex items-center gap-2 text-sm font-bold">
+                  <input
+                    type="checkbox"
+                    name="canTakeout"
+                    defaultChecked={editingMenu.canTakeout}
+                    className="w-4 h-4"
+                  />
+                  テイクアウト可能にする
+                </label>
+                <label className="flex items-center gap-2 text-sm font-bold text-green-700 bg-green-50 p-2 rounded">
+                  <input
+                    type="checkbox"
+                    name="isTakeoutOnly"
+                    defaultChecked={editingMenu.isTakeoutOnly}
+                    className="w-4 h-4"
+                  />
+                  テイクアウト専門にする (店内不可)
+                </label>
+              </div>
+              <div className="flex gap-2 pt-4">
+                <Button
+                  variant="secondary"
+                  onClick={() => setEditingMenu(null)}
+                >
+                  キャンセル
+                </Button>
+                <Button type="submit">保存</Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 
@@ -1633,83 +1493,41 @@ export default function App() {
     <div className="space-y-4 pb-20">
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-xl font-bold text-stone-700 flex items-center gap-2">
-          <History className="text-orange-600" /> 帳簿（売上・経費・給料）
+          <History className="text-orange-600" /> 帳簿
         </h2>
         <button
           onClick={downloadCSV}
-          className="text-xs flex items-center gap-1 bg-white border border-stone-300 px-3 py-1.5 rounded-lg text-stone-600 hover:bg-stone-50"
+          className="text-xs bg-white border p-2 rounded"
         >
-          <Download size={14} /> CSV出力
+          <Download size={14} />
         </button>
       </div>
-
       <MonthNavigator currentMonth={currentMonth} onChange={changeMonth} />
-
       <div className="bg-gradient-to-br from-orange-50 to-amber-50 border border-orange-100 rounded-xl p-4 shadow-sm">
-        <h3 className="font-bold text-orange-800 mb-3 flex items-center gap-2 text-sm border-b border-orange-200 pb-2">
-          <Wallet size={18} /> {currentMonth} の給料計算
+        <h3 className="font-bold text-orange-800 mb-2 text-sm">
+          <Wallet size={18} className="inline mr-2" />
+          {currentMonth} 給料計算
         </h3>
-        <div className="grid grid-cols-2 gap-4 mb-3">
-          <div className="bg-white p-3 rounded-lg border border-orange-100">
-            <p className="text-xs text-stone-500 mb-1">売上合計 (税込)</p>
-            <p className="font-mono font-bold text-lg">
-              ¥{aggregated.summary.totalSales.toLocaleString()}
-            </p>
-            <div className="text-xs text-stone-400 mt-1 border-t border-stone-100 pt-1">
-              <div className="flex justify-between">
-                <span>(8%対象)</span>
-                <span>¥{aggregated.summary.tax8.toLocaleString()}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>(10%対象)</span>
-                <span>¥{aggregated.summary.tax10.toLocaleString()}</span>
-              </div>
-            </div>
+        <div className="bg-white p-3 rounded-lg border border-orange-100 mb-2">
+          <div className="flex justify-between text-sm">
+            <span>売上</span>
+            <span>¥{aggregated.summary.totalSales.toLocaleString()}</span>
           </div>
-          <div className="bg-white p-3 rounded-lg border border-orange-100">
-            <p className="text-xs text-stone-500 mb-1">経費合計</p>
-            <p className="font-mono font-bold text-lg text-red-500">
-              -¥{aggregated.summary.totalExpenses.toLocaleString()}
-            </p>
+          <div className="text-xs text-stone-400 flex justify-between">
+            <span>(税: ¥{aggregated.summary.totalTax.toLocaleString()})</span>
           </div>
         </div>
-
-        <div className="bg-white p-3 rounded-lg border-l-4 border-stone-400 mb-3 shadow-sm flex items-center justify-between">
-          <div className="flex items-center gap-2 text-stone-600">
-            <Landmark size={18} />
-            <span className="text-xs font-bold">今月の納税積立 (消費税)</span>
-          </div>
-          <span className="font-mono font-bold text-lg text-stone-700">
-            ¥{aggregated.summary.totalTax.toLocaleString()}
-          </span>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border-2 border-orange-200 shadow-sm relative overflow-hidden">
-          <div className="absolute top-0 right-0 bg-orange-100 text-orange-700 text-[10px] font-bold px-2 py-1 rounded-bl-lg">
-            利益÷2 (1000円未満切捨)
-          </div>
+        <div className="bg-white p-4 rounded-xl border-2 border-orange-200">
           <div className="flex justify-between items-end mb-2">
             <div className="flex items-center gap-2">
               <User size={18} className="text-orange-600" />
-              <span className="font-bold text-stone-700">高橋・浜田 給料</span>
+              <span className="font-bold text-stone-700">一人あたり給料</span>
             </div>
             <span className="font-mono text-2xl font-bold text-orange-600">
               ¥{aggregated.summary.salaryPerPerson.toLocaleString()}
-              <span className="text-sm text-stone-400 font-normal ml-1">
-                /人
-              </span>
             </span>
           </div>
-
-          <div className="my-3 px-1">
-            <div className="flex justify-between text-xs text-stone-400 mb-1">
-              <span>0</span>
-              <span>手動調整</span>
-              <span>
-                Max:{" "}
-                {aggregated.summary.defaultSalaryPerPerson.toLocaleString()}
-              </span>
-            </div>
+          <div className="my-3">
             <input
               type="range"
               min="0"
@@ -1717,284 +1535,183 @@ export default function App() {
               step="1000"
               value={aggregated.summary.salaryPerPerson}
               onChange={(e) => setManualSalary(Number(e.target.value))}
-              className="w-full h-2 bg-stone-200 rounded-lg appearance-none cursor-pointer accent-orange-600"
+              className="w-full accent-orange-600"
             />
-            {manualSalary !== null && (
-              <div className="text-center mt-1">
-                <button
-                  onClick={() => setManualSalary(null)}
-                  className="text-xs text-blue-500 underline"
-                >
-                  リセット（自動計算に戻す）
-                </button>
-              </div>
-            )}
           </div>
-
           <div className="border-t border-dashed border-stone-200 pt-2 text-sm space-y-2">
-            <div className="flex justify-between items-center">
-              <span className="flex items-center gap-1 text-stone-500">
-                <PiggyBank size={14} /> ランタナ貯金 (端数+調整分)
+            <div className="flex justify-between items-center bg-stone-50 p-2 rounded">
+              <span className="flex items-center gap-1 text-stone-600 font-bold">
+                <PiggyBank size={14} /> 端数貯金
               </span>
-              <div className="flex items-center gap-2">
-                <span className="font-mono font-bold text-stone-700">
-                  ¥{aggregated.summary.lantanaSavings.toLocaleString()}
-                </span>
-                <button
-                  onClick={() =>
-                    transferSavingsToFunds(
-                      aggregated.summary.remainingLantanaSavings
-                    )
-                  }
-                  className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 transition-colors ${
-                    aggregated.summary.remainingLantanaSavings > 0
-                      ? "bg-green-500 text-white hover:bg-green-600 shadow-md"
-                      : "bg-stone-100 text-stone-400 cursor-not-allowed"
-                  }`}
-                  disabled={aggregated.summary.remainingLantanaSavings <= 0}
-                >
-                  <ArrowRightCircle size={12} /> 資金へ移動
-                </button>
-              </div>
+              <span className="font-mono text-stone-800">
+                ¥{aggregated.summary.lantanaSavings.toLocaleString()}
+              </span>
             </div>
-            {aggregated.summary.totalTax > 0 && (
-              <div className="flex justify-end mt-2">
-                <button
-                  onClick={() =>
-                    transferSavingsToFunds(aggregated.summary.totalTax)
-                  }
-                  className="text-xs text-stone-400 underline hover:text-orange-600"
-                >
-                  納税積立(¥{aggregated.summary.totalTax.toLocaleString()}
-                  )も資金へ移動する
-                </button>
-              </div>
-            )}
-            {/* 給料記録ボタン */}
-            <div className="pt-2 border-t border-dashed border-stone-200 flex justify-end">
+            <div className="flex justify-end gap-2 items-center">
+              <span className="text-xs text-stone-400">
+                移動済み: ¥
+                {aggregated.summary.transferredLantanaSavings.toLocaleString()}
+              </span>
               <button
                 onClick={() =>
-                  recordSalaryAsExpense(aggregated.summary.salaryPerPerson)
+                  transferToFunds(
+                    aggregated.summary.remainingLantanaSavings,
+                    "端数貯金"
+                  )
                 }
-                className="bg-orange-500 text-white px-3 py-1 rounded-full text-xs font-bold hover:bg-orange-600 shadow-md flex items-center gap-1"
+                className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 transition-colors ${
+                  aggregated.summary.remainingLantanaSavings > 0
+                    ? "bg-orange-500 text-white hover:bg-orange-600 shadow-md"
+                    : "bg-stone-100 text-stone-400 cursor-not-allowed"
+                }`}
+                disabled={aggregated.summary.remainingLantanaSavings <= 0}
               >
-                <CheckCircle2 size={12} /> 給料を確定して記録
+                <ArrowRightCircle size={12} /> 残額を移動
               </button>
             </div>
+
+            <div className="flex justify-between items-center bg-stone-50 p-2 rounded mt-1">
+              <span className="flex items-center gap-1 text-stone-600 font-bold">
+                <Landmark size={14} /> 消費税(預り)
+              </span>
+              <span className="font-mono text-stone-800">
+                ¥{aggregated.summary.totalTax.toLocaleString()}
+              </span>
+            </div>
+            <div className="flex justify-end gap-2 items-center">
+              <span className="text-xs text-stone-400">
+                移動済み: ¥{aggregated.summary.transferredTax.toLocaleString()}
+              </span>
+              <button
+                onClick={() =>
+                  transferToFunds(aggregated.summary.remainingTax, "税金積立")
+                }
+                className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 transition-colors ${
+                  aggregated.summary.remainingTax > 0
+                    ? "bg-green-500 text-white hover:bg-green-600 shadow-md"
+                    : "bg-stone-100 text-stone-400 cursor-not-allowed"
+                }`}
+                disabled={aggregated.summary.remainingTax <= 0}
+              >
+                <ArrowRightCircle size={12} /> 残額を移動
+              </button>
+            </div>
+          </div>
+
+          <div className="pt-2 border-t border-dashed border-stone-200 flex justify-end">
+            <button
+              onClick={() =>
+                recordSalaryAsExpense(aggregated.summary.salaryPerPerson)
+              }
+              className="bg-orange-500 text-white px-3 py-1 rounded-full text-xs font-bold hover:bg-orange-600 shadow-md flex items-center gap-1"
+            >
+              <CheckCircle2 size={12} /> 給料を確定して記録
+            </button>
           </div>
         </div>
       </div>
       <div className="bg-white rounded-xl border border-stone-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
-            <thead className="bg-stone-100 text-stone-600 font-bold border-b border-stone-200">
+            <thead className="bg-stone-100 font-bold">
               <tr>
-                <th className="p-3 whitespace-nowrap">日付</th>
-                <th className="p-3 whitespace-nowrap text-right">売上</th>
-                <th className="p-3 whitespace-nowrap text-right text-orange-700">
-                  高
-                </th>
-                <th className="p-3 whitespace-nowrap text-right text-blue-700">
-                  浜
-                </th>
-                <th className="p-3 whitespace-nowrap text-right text-green-700">
-                  店
-                </th>
-                <th className="p-3 whitespace-nowrap text-right font-bold">
-                  収支
-                </th>
+                <th className="p-3">日付</th>
+                <th className="p-3 text-right">売上</th>
+                <th className="p-3 text-right">収支</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-100">
-              {aggregated.daily.map((row) => {
-                const profit = row.sales - row.expenses;
-                const dailyTax =
-                  Math.floor((row.sales8 / 1.08) * 0.08) +
-                  Math.floor((row.sales10 / 1.1) * 0.1);
-                const isExpanded = expandedDate === row.date;
-                return (
-                  <React.Fragment key={row.date}>
-                    <tr
-                      onClick={() =>
-                        setExpandedDate(isExpanded ? null : row.date)
-                      }
-                      className={`cursor-pointer transition-colors ${
-                        isExpanded ? "bg-orange-50" : "hover:bg-stone-50"
-                      }`}
-                    >
-                      <td className="p-3 font-mono text-stone-500 flex items-center gap-1">
-                        {isExpanded ? (
-                          <ChevronUp size={14} className="text-orange-600" />
-                        ) : (
-                          <ChevronDown size={14} />
-                        )}
-                        {row.date.slice(8)}日
-                      </td>
-                      <td className="p-3 text-right font-mono font-bold">
-                        ¥{row.sales.toLocaleString()}
-                      </td>
-                      <td className="p-3 text-right font-mono text-orange-700">
-                        {row.takahashiPay > 0
-                          ? `¥${row.takahashiPay.toLocaleString()}`
-                          : "-"}
-                      </td>
-                      <td className="p-3 text-right font-mono text-blue-700">
-                        {row.hamadaPay > 0
-                          ? `¥${row.hamadaPay.toLocaleString()}`
-                          : "-"}
-                      </td>
-                      <td className="p-3 text-right font-mono text-green-700">
-                        {row.lantanaPay !== 0
-                          ? `¥${row.lantanaPay.toLocaleString()}`
-                          : "-"}
-                      </td>
-                      <td
-                        className={`p-3 text-right font-mono font-bold ${
-                          profit >= 0 ? "text-stone-800" : "text-red-500"
-                        }`}
-                      >
-                        ¥{profit.toLocaleString()}
+              {aggregated.daily.map((row) => (
+                <React.Fragment key={row.date}>
+                  <tr
+                    onClick={() =>
+                      setExpandedDate(
+                        expandedDate === row.date ? null : row.date
+                      )
+                    }
+                    className="cursor-pointer hover:bg-stone-50"
+                  >
+                    <td className="p-3">{row.date.slice(8)}日</td>
+                    <td className="p-3 text-right">
+                      ¥{row.sales.toLocaleString()}
+                    </td>
+                    <td className="p-3 text-right">
+                      ¥{(row.sales - row.expenses).toLocaleString()}
+                    </td>
+                  </tr>
+                  {expandedDate === row.date && (
+                    <tr className="bg-stone-50">
+                      <td colSpan={3} className="p-4">
+                        <div className="space-y-2">
+                          {row.expenseDetails.map((e) => (
+                            <div
+                              key={e.id}
+                              className="flex justify-between text-xs"
+                            >
+                              <span>{e.item}</span>
+                              <span>
+                                ¥{e.amount}{" "}
+                                <button
+                                  onClick={(ev) =>
+                                    confirmDelete(ev, "expenses", e.id, "削除?")
+                                  }
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              </span>
+                            </div>
+                          ))}
+                          {row.rawOrders.map((o) => (
+                            <div key={o.id} className="border-b pb-1 mb-1">
+                              <div className="flex justify-between text-xs font-bold">
+                                <span>
+                                  {new Date(
+                                    o.createdAt?.seconds * 1000
+                                  ).toLocaleTimeString([], {
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  })}
+                                </span>
+                                <span>
+                                  ¥{o.total}{" "}
+                                  <button
+                                    onClick={(ev) =>
+                                      confirmDelete(ev, "orders", o.id, "削除?")
+                                    }
+                                  >
+                                    <Trash2 size={12} />
+                                  </button>
+                                </span>
+                              </div>
+                              <div className="text-[10px] text-gray-500">
+                                {o.items?.map((item, idx) => (
+                                  <div key={idx}>
+                                    {item.name}{" "}
+                                    {item.options?.length > 0 &&
+                                      `[${item.options.join(",")}]`}
+                                    {item.isTakeout ? (
+                                      <span className="ml-1 text-blue-500">
+                                        (Takeout)
+                                      </span>
+                                    ) : (
+                                      ""
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
                       </td>
                     </tr>
-                    {isExpanded && (
-                      <tr className="bg-stone-50">
-                        <td colSpan={6} className="p-4">
-                          <div className="bg-white rounded-lg border border-stone-200 p-4 space-y-6">
-                            {/* Detailed Expenses with Delete */}
-                            <div>
-                              <h4 className="font-bold text-stone-700 mb-2 flex items-center gap-2 text-sm border-b pb-1">
-                                <DollarSign
-                                  size={16}
-                                  className="text-red-500"
-                                />{" "}
-                                経費明細・訂正
-                              </h4>
-                              {row.expenseDetails.length === 0 ? (
-                                <p className="text-stone-400 text-xs">なし</p>
-                              ) : (
-                                <div className="space-y-1">
-                                  {row.expenseDetails.map((exp, idx) => (
-                                    <div
-                                      key={idx}
-                                      className="flex justify-between items-center text-sm p-2 bg-stone-50 rounded"
-                                    >
-                                      <div className="flex gap-2 items-center">
-                                        <span
-                                          className={`text-[10px] px-1.5 rounded text-white font-bold ${
-                                            exp.payer === "高橋"
-                                              ? "bg-orange-400"
-                                              : exp.payer === "浜田"
-                                              ? "bg-blue-400"
-                                              : "bg-green-500"
-                                          }`}
-                                        >
-                                          {exp.payer.charAt(0)}
-                                        </span>
-                                        <span className="text-stone-600">
-                                          {exp.item || exp.category}
-                                        </span>
-                                      </div>
-                                      <div className="flex items-center gap-3">
-                                        <span className="font-mono text-stone-600">
-                                          ¥{exp.amount.toLocaleString()}
-                                        </span>
-                                        <button
-                                          onClick={(e) =>
-                                            confirmDelete(
-                                              e,
-                                              "expenses",
-                                              exp.id,
-                                              "この経費記録を削除しますか？"
-                                            )
-                                          }
-                                          className="text-stone-400 hover:text-red-600 p-2 rounded-full hover:bg-red-50"
-                                        >
-                                          <Trash2 size={16} />
-                                        </button>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-
-                            {/* Detailed Orders with Delete */}
-                            <div>
-                              <h4 className="font-bold text-stone-700 mb-2 flex items-center justify-between gap-2 text-sm border-b pb-1">
-                                <span className="flex items-center gap-2">
-                                  <Receipt
-                                    size={16}
-                                    className="text-orange-500"
-                                  />{" "}
-                                  売上明細・訂正
-                                </span>
-                                <span className="text-xs font-normal text-stone-400">
-                                  内税合計: ¥{dailyTax.toLocaleString()}
-                                </span>
-                              </h4>
-                              {row.rawOrders.length === 0 ? (
-                                <p className="text-stone-400 text-xs">なし</p>
-                              ) : (
-                                <div className="space-y-1">
-                                  {row.rawOrders.map((order, idx) => (
-                                    <div
-                                      key={idx}
-                                      className="flex justify-between items-center text-sm p-2 bg-stone-50 rounded"
-                                    >
-                                      <div className="text-stone-600 text-xs">
-                                        {new Date(
-                                          order.createdAt?.seconds * 1000
-                                        ).toLocaleTimeString("ja-JP", {
-                                          hour: "2-digit",
-                                          minute: "2-digit",
-                                        })}{" "}
-                                        <span className="ml-2">
-                                          ({order.items?.length || 0}点)
-                                        </span>
-                                      </div>
-                                      <div className="flex items-center gap-3">
-                                        <span className="font-mono font-bold text-stone-700">
-                                          ¥{order.total.toLocaleString()}
-                                        </span>
-                                        <button
-                                          onClick={(e) =>
-                                            confirmDelete(
-                                              e,
-                                              "orders",
-                                              order.id,
-                                              "この注文記録を削除しますか？\n売上から差し引かれます。"
-                                            )
-                                          }
-                                          className="text-stone-400 hover:text-red-600 p-2 rounded-full hover:bg-red-50"
-                                        >
-                                          <Trash2 size={16} />
-                                        </button>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </React.Fragment>
-                );
-              })}
-              {aggregated.daily.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="p-8 text-center text-stone-400">
-                    データがありません
-                  </td>
-                </tr>
-              )}
+                  )}
+                </React.Fragment>
+              ))}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* Delete Confirmation Modal */}
       {deleteModal && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-white rounded-2xl w-full max-w-sm p-6 text-center space-y-4 shadow-xl">
@@ -2038,7 +1755,6 @@ export default function App() {
           <Utensils className="text-orange-600" /> メニュー
         </h2>
 
-        {/* 日付変更エリア */}
         <div className="bg-white p-3 rounded-xl border border-stone-200 mb-4 shadow-sm flex items-center justify-between">
           <div className="flex items-center gap-2 text-stone-600 font-bold text-sm">
             <CalendarDays size={18} />
@@ -2052,7 +1768,6 @@ export default function App() {
           />
         </div>
 
-        {/* テイクアウト切り替えスイッチ */}
         <div className="flex bg-stone-100 p-1 rounded-lg mb-4">
           <button
             onClick={() => setIsTakeoutMode(false)}
@@ -2085,7 +1800,6 @@ export default function App() {
                   addToCart(item, item.isFixedSet ? "setB" : "single", false);
                 }
               }}
-              // ★修正：canTakeoutが未設定（undefined）の場合も押せるようにする
               disabled={isTakeoutMode && item.canTakeout === false}
               className={`p-4 rounded-xl text-left transition-all active:scale-95 shadow-sm border border-stone-100 flex flex-col justify-between h-32 ${
                 item.imageColor
@@ -2095,7 +1809,6 @@ export default function App() {
                   : ""
               } relative`}
             >
-              {/* テイクアウト専門バッジ */}
               {item.isTakeoutOnly && (
                 <span className="absolute top-2 right-2 bg-green-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
                   <Package size={10} /> Takeout Only
@@ -2153,17 +1866,16 @@ export default function App() {
                     )}
                     {item.isTakeout ? (
                       <span className="bg-blue-100 text-blue-700 px-1 rounded flex items-center gap-1">
-                        <ShoppingBag size={10} /> Takeout
+                        Takeout
                       </span>
                     ) : (
                       <span className="bg-green-100 text-green-700 px-1 rounded flex items-center gap-1">
-                        <Home size={10} /> 店内
+                        店内
                       </span>
                     )}
                     {item.options && item.options.length > 0 && (
                       <div className="flex flex-wrap gap-1 mt-1">
                         {item.options.map((opt, i) => (
-                          // 安全な表示（文字列またはオブジェクトに対応）
                           <span
                             key={i}
                             className="text-[10px] bg-stone-100 text-stone-500 px-1 rounded border border-stone-200"
@@ -2229,9 +1941,7 @@ export default function App() {
                       ¥{getPrice(selectedItem, "single")}
                     </span>
                   </button>
-
-                  {/* ★修正：セット販売が有効（hasSets=true）なら必ず表示（typeがなくても） */}
-                  {selectedItem.hasSets && (
+                  {selectedItem.type === "food" && (
                     <>
                       <button
                         onClick={() =>
@@ -2271,9 +1981,7 @@ export default function App() {
                       </button>
                     </>
                   )}
-
-                  {/* デザートセットも同様に表示 */}
-                  {selectedItem.priceDessertSet && (
+                  {selectedItem.type === "dessert" && (
                     <button
                       onClick={() =>
                         addToCart(selectedItem, "setDessert", isTakeoutMode)
@@ -2295,8 +2003,6 @@ export default function App() {
                   )}
                 </div>
               </div>
-
-              {/* オプション選択（大盛りなど） */}
               {selectedItem.options && selectedItem.options.length > 0 && (
                 <div>
                   <label className="text-sm font-bold text-stone-500 mb-2 block">
@@ -2348,7 +2054,6 @@ export default function App() {
                   </div>
                 </div>
               )}
-
               {selectedItem.canTakeout !== false && !isTakeoutMode && (
                 <div className="pt-4 border-t border-stone-100">
                   <p className="text-xs text-center text-stone-400 mb-2">
@@ -2367,96 +2072,155 @@ export default function App() {
           </div>
         </div>
       )}
-      {isCheckoutModalOpen && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-sm p-6 text-center space-y-6">
-            <h3 className="text-xl font-bold text-stone-800">お会計確定</h3>
-            <div className="py-4 bg-stone-50 rounded-lg">
-              <p className="text-sm text-stone-500">合計金額</p>
-              <p className="text-4xl font-mono font-bold text-orange-600">
-                ¥{calculateTotal().toLocaleString()}
-              </p>
-            </div>
-            <div className="flex gap-3">
-              <Button
-                variant="secondary"
-                className="flex-1"
-                onClick={() => setIsCheckoutModalOpen(false)}
-              >
-                戻る
-              </Button>
-              <Button className="flex-1" onClick={handleCheckout}>
-                確定する
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 
-  const renderMenuSettings = () => (
+  const renderExpenses = () => (
     <div className="max-w-2xl mx-auto space-y-6 pb-20">
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-xl font-bold text-stone-700 flex items-center gap-2">
-          <Settings className="text-orange-600" /> メニュー管理
+      <Card className="p-6">
+        <h2 className="text-xl font-bold text-stone-700 mb-6 flex items-center gap-2">
+          <DollarSign className="text-orange-600" /> 経費の入力
         </h2>
-        <Button onClick={() => setEditingMenu({})} className="text-sm">
-          <PlusCircle size={16} /> 新規追加
-        </Button>
-      </div>
+        <form onSubmit={submitExpense} className="space-y-4">
+          <div className="flex bg-stone-100 p-1 rounded-lg mb-4">
+            <button
+              type="button"
+              onClick={() => setExpenseType("expense")}
+              className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${
+                expenseType === "expense"
+                  ? "bg-white text-orange-600 shadow"
+                  : "text-stone-400"
+              }`}
+            >
+              支出
+            </button>
+            <button
+              type="button"
+              onClick={() => setExpenseType("refund")}
+              className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${
+                expenseType === "refund"
+                  ? "bg-white text-blue-600 shadow"
+                  : "text-stone-400"
+              }`}
+            >
+              返金 (戻り)
+            </button>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-stone-500 mb-1">
+                日付
+              </label>
+              <input
+                type="date"
+                required
+                value={expenseForm.date}
+                onChange={(e) =>
+                  setExpenseForm({ ...expenseForm, date: e.target.value })
+                }
+                className="w-full p-2 border border-stone-300 rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-stone-500 mb-1">
+                金額
+              </label>
+              <input
+                type="number"
+                required
+                placeholder="¥0"
+                value={expenseForm.amount}
+                onChange={(e) =>
+                  setExpenseForm({ ...expenseForm, amount: e.target.value })
+                }
+                className="w-full p-2 border border-stone-300 rounded-lg font-mono text-right"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-stone-500 mb-1">
+              支払った人（財布）
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              {["高橋", "浜田", "ランタナ"].map((p) => (
+                <button
+                  type="button"
+                  key={p}
+                  onClick={() => setExpenseForm({ ...expenseForm, payer: p })}
+                  className={`p-2 rounded-lg text-sm border ${
+                    expenseForm.payer === p
+                      ? "bg-orange-600 text-white border-orange-600"
+                      : "bg-white text-stone-600 border-stone-200"
+                  }`}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-stone-500 mb-1">
+              分類
+            </label>
+            <select
+              value={expenseForm.category}
+              onChange={(e) =>
+                setExpenseForm({ ...expenseForm, category: e.target.value })
+              }
+              className="w-full p-2 border border-stone-300 rounded-lg bg-white"
+            >
+              <option>仕入</option>
+              <option>消耗品</option>
+              <option>人件費</option>
+              <option>委託費</option>
+              <option>給料分配</option>
+              <option>その他</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-stone-500 mb-1">
+              品目・詳細
+            </label>
+            <input
+              type="text"
+              placeholder="例：米、返金など"
+              value={expenseForm.item}
+              onChange={(e) =>
+                setExpenseForm({ ...expenseForm, item: e.target.value })
+              }
+              className="w-full p-2 border border-stone-300 rounded-lg"
+            />
+          </div>
+          <Button type="submit" className="w-full py-3 mt-4">
+            <PlusCircle size={18} />{" "}
+            {expenseType === "expense" ? "経費を登録" : "返金を記録"}
+          </Button>
+        </form>
+      </Card>
       <div className="space-y-3">
-        {menuItems.map((item) => (
+        <h3 className="font-bold text-stone-500 text-sm pl-2">最近の経費</h3>
+        {expenses.slice(0, 5).map((exp) => (
           <div
-            key={item.id}
-            className="bg-white p-4 rounded-xl border border-stone-200 flex justify-between items-center"
+            key={exp.id}
+            className="bg-white p-3 rounded-lg border border-stone-200 flex justify-between items-center text-sm"
           >
-            <div className="flex items-center gap-3">
-              <div
-                className={`w-12 h-12 rounded-lg ${item.imageColor} flex items-center justify-center text-stone-500`}
-              >
-                {item.type === "food" && <Utensils size={20} />}{" "}
-                {item.type === "drink" && <Coffee size={20} />}{" "}
-                {item.type === "dessert" && <ChefHat size={20} />}
+            <div>
+              <div className="font-bold text-stone-700">
+                {exp.item || exp.category}
               </div>
-              <div>
-                <div className="font-bold text-stone-800">{item.name}</div>
-                <div className="text-xs text-stone-500">
-                  ¥{item.basePrice.toLocaleString()}{" "}
-                  {item.hasSets &&
-                    item.type === "food" &&
-                    `(A:¥${getPrice(item, "setA")}/B:¥${getPrice(
-                      item,
-                      "setB"
-                    )})`}
-                </div>
-                {item.isTakeoutOnly && (
-                  <span className="text-[10px] bg-green-100 text-green-700 px-1 rounded ml-1">
-                    Takeout Only
-                  </span>
-                )}
+              <div className="text-xs text-stone-400">
+                {exp.date} / {exp.payer}払
               </div>
             </div>
-            <div className="flex gap-2 items-center">
-              {/* ★一括修正ボタン: テイクアウト不可の商品以外なら表示 */}
-              {item.canTakeout !== false && (
-                <button
-                  onClick={() => fixPastOrdersToTakeout(item.name)}
-                  className="p-2 text-yellow-500 hover:text-yellow-600 bg-yellow-50 rounded-lg"
-                  title="この商品の過去注文を全てテイクアウトに修正"
-                >
-                  <Zap size={16} />
-                </button>
-              )}
+            <div className="flex items-center gap-3">
+              <span className="font-mono text-stone-600">
+                ¥{exp.amount.toLocaleString()}
+              </span>
               <button
-                onClick={() => setEditingMenu(item)}
-                className="p-2 text-stone-400 hover:text-orange-600"
-              >
-                <Edit2 size={16} />
-              </button>
-              <button
-                onClick={() => deleteMenuItem(item.id)}
-                className="p-2 text-stone-400 hover:text-red-600"
+                onClick={(e) =>
+                  confirmDelete(e, "expenses", exp.id, "削除しますか？")
+                }
+                className="text-stone-400 hover:text-red-600 p-2"
               >
                 <Trash2 size={16} />
               </button>
@@ -2464,125 +2228,98 @@ export default function App() {
           </div>
         ))}
       </div>
-      {editingMenu && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4">
-          <div className="bg-white p-6 rounded-xl w-full max-w-md h-[90vh] overflow-y-auto">
-            <h3 className="font-bold mb-4">メニュー編集</h3>
-            <form onSubmit={saveMenuItem} className="space-y-4">
-              <input
-                name="name"
-                defaultValue={editingMenu.name}
-                placeholder="名前"
-                className="border p-2 w-full rounded"
-                required
-              />
-              <input
-                name="basePrice"
-                type="number"
-                defaultValue={editingMenu.basePrice}
-                placeholder="価格"
-                className="border p-2 w-full rounded"
-                required
-              />
+    </div>
+  );
 
-              {/* オプション設定フォーム */}
-              <div className="border-t pt-4">
-                <label className="text-sm font-bold">オプション設定</label>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setEditingOptions([
-                      ...editingOptions,
-                      { label: "", price: 0 },
-                    ])
-                  }
-                  className="text-xs bg-gray-100 px-2 py-1 ml-2 rounded"
-                >
-                  追加
-                </button>
-                {editingOptions.map((opt, i) => (
-                  <div key={i} className="flex gap-2 mt-2">
-                    <input
-                      value={opt.label}
-                      onChange={(e) => {
-                        const n = [...editingOptions];
-                        n[i].label = e.target.value;
-                        setEditingOptions(n);
-                      }}
-                      className="border p-1 w-full rounded"
-                      placeholder="名称(大盛など)"
-                    />
-                    <input
-                      type="number"
-                      value={opt.price}
-                      onChange={(e) => {
-                        const n = [...editingOptions];
-                        n[i].price = Number(e.target.value);
-                        setEditingOptions(n);
-                      }}
-                      className="border p-1 w-20 rounded"
-                      placeholder="円"
-                    />
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setEditingOptions(
-                          editingOptions.filter((_, idx) => idx !== i)
-                        )
-                      }
-                      className="text-red-500"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
+  const renderReport = () => (
+    <div className="max-w-2xl mx-auto space-y-6 pb-20">
+      <Card className="p-6">
+        <h2 className="text-xl font-bold text-stone-700 mb-6 flex items-center gap-2">
+          <BookOpen className="text-orange-600" /> 今日の日報
+        </h2>
+        <form onSubmit={submitReport} className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-stone-500 mb-1">
+                日付
+              </label>
+              <input
+                type="date"
+                required
+                value={reportForm.date}
+                onChange={(e) =>
+                  setReportForm({ ...reportForm, date: e.target.value })
+                }
+                className="w-full p-2 border border-stone-300 rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-stone-500 mb-1">
+                天気
+              </label>
+              <div className="flex bg-stone-100 rounded-lg p-1">
+                {["晴れ", "曇り", "雨"].map((w) => (
+                  <button
+                    type="button"
+                    key={w}
+                    onClick={() => setReportForm({ ...reportForm, weather: w })}
+                    className={`flex-1 text-xs py-1.5 rounded-md ${
+                      reportForm.weather === w
+                        ? "bg-white shadow text-orange-600 font-bold"
+                        : "text-stone-400"
+                    }`}
+                  >
+                    {w}
+                  </button>
                 ))}
-                {editingOptions.length === 0 && (
-                  <p className="text-xs text-gray-400 mt-1">オプションなし</p>
-                )}
               </div>
-
-              <div className="border-t pt-4 space-y-2">
-                <label className="flex items-center gap-2 text-sm font-bold">
-                  <input
-                    type="checkbox"
-                    name="hasSets"
-                    defaultChecked={editingMenu.hasSets}
-                    className="w-4 h-4"
-                  />
-                  セット販売を有効にする
-                </label>
-                <label className="flex items-center gap-2 text-sm font-bold">
-                  <input
-                    type="checkbox"
-                    name="canTakeout"
-                    defaultChecked={editingMenu.canTakeout}
-                    className="w-4 h-4"
-                  />
-                  テイクアウト可能にする
-                </label>
-                <label className="flex items-center gap-2 text-sm font-bold text-green-700 bg-green-50 p-2 rounded">
-                  <input
-                    type="checkbox"
-                    name="isTakeoutOnly"
-                    defaultChecked={editingMenu.isTakeoutOnly}
-                    className="w-4 h-4"
-                  />
-                  テイクアウト専門にする (店内不可)
-                </label>
-              </div>
-              <div className="flex gap-2 pt-4">
-                <Button
-                  variant="secondary"
-                  onClick={() => setEditingMenu(null)}
-                >
-                  キャンセル
-                </Button>
-                <Button type="submit">保存</Button>
-              </div>
-            </form>
+            </div>
           </div>
-        </div>
-      )}
+          <div>
+            <label className="block text-xs font-bold text-stone-500 mb-1">
+              来店数
+            </label>
+            <input
+              type="number"
+              value={reportForm.customerCount}
+              onChange={(e) =>
+                setReportForm({ ...reportForm, customerCount: e.target.value })
+              }
+              className="w-full p-2 border border-stone-300 rounded-lg"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-stone-500 mb-1">
+              メモ
+            </label>
+            <textarea
+              value={reportForm.note}
+              onChange={(e) =>
+                setReportForm({ ...reportForm, note: e.target.value })
+              }
+              className="w-full p-2 border border-stone-300 rounded-lg h-32"
+            />
+          </div>
+          <Button type="submit" className="w-full">
+            保存
+          </Button>
+        </form>
+      </Card>
+      <div className="space-y-4">
+        {reports.map((r) => (
+          <Card key={r.id} className="p-4">
+            <div className="flex justify-between">
+              <div className="font-bold">{r.date}</div>
+              <button
+                onClick={(e) => confirmDelete(e, "reports", r.id, "削除？")}
+              >
+                <Trash2 size={16} />
+              </button>
+            </div>
+            <p className="text-sm text-stone-600">{r.note}</p>
+          </Card>
+        ))}
+      </div>
     </div>
   );
 
