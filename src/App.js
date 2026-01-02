@@ -325,10 +325,15 @@ export default function App() {
   }, [editingMenu]);
 
   useEffect(() => {
+    // 処理なし
+  }, [selectedItem]);
+
+  useEffect(() => {
     const script = document.createElement("script");
     script.src = "https://cdn.tailwindcss.com";
     document.head.appendChild(script);
 
+    // アプリアイコン設定
     const iconUrl =
       "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%23ea580c'/%3E%3Ctext x='50' y='70' font-size='50' text-anchor='middle' fill='white'%3E☕️%3C/text%3E%3C/svg%3E";
     let link = document.querySelector("link[rel~='icon']");
@@ -516,6 +521,7 @@ export default function App() {
     }
   };
 
+  // 過去の注文データを一括修正する機能
   const fixPastOrdersToTakeout = async (targetName) => {
     if (
       !window.confirm(
@@ -713,6 +719,7 @@ export default function App() {
         ? Number(formData.get("priceDessertSet"))
         : null,
       canTakeout: formData.get("canTakeout") === "on",
+      // ★追加：テイクアウト専門フラグ
       isTakeoutOnly: formData.get("isTakeoutOnly") === "on",
       imageColor: formData.get("imageColor"),
       options: editingOptions,
@@ -776,6 +783,7 @@ export default function App() {
 
     const price = base + optionPrice;
 
+    // ★ここがポイント：商品が「テイクアウト専門」なら強制的にテイクアウト扱いにする
     const isTakeout = item.isTakeoutOnly || isTakeoutMode;
 
     const newItem = {
@@ -927,6 +935,10 @@ export default function App() {
     let totalTax10Sales = 0;
     let totalTax8Sales = 0;
 
+    let totalTakahashiPay = 0;
+    let totalHamadaPay = 0;
+    let totalLantanaPay = 0;
+
     const targetOrders = orders.filter((o) => o.date.startsWith(currentMonth));
     const targetExpenses = expenses.filter((e) =>
       e.date.startsWith(currentMonth)
@@ -1004,6 +1016,9 @@ export default function App() {
 
       if (exp.category !== "給料分配") {
         totalExpensesAll += exp.amount;
+        if (exp.payer === "高橋") totalTakahashiPay += exp.amount;
+        if (exp.payer === "浜田") totalHamadaPay += exp.amount;
+        if (exp.payer === "ランタナ") totalLantanaPay += exp.amount;
       }
 
       if (exp.payer === "高橋") dataByDate[d].takahashiPay += exp.amount;
@@ -1070,10 +1085,13 @@ export default function App() {
       summary: {
         totalSales: totalSalesAll,
         totalExpenses: totalExpensesAll,
+        totalTakahashiPay,
+        totalHamadaPay,
+        totalLantanaPay,
         profit: profitBeforeTax,
         salaryPerPerson: finalSalaryPerPerson,
         defaultSalaryPerPerson,
-        lantanaSavings: savingOnly,
+        lantanaSavings: savingOnly, // 純粋な端数貯金
         remainingLantanaSavings,
         remainingTax,
         transferredLantanaSavings,
@@ -1492,8 +1510,6 @@ export default function App() {
                 className="border p-2 w-full rounded"
                 required
               />
-
-              {/* オプション設定フォーム */}
               <div className="border-t pt-4">
                 <label className="text-sm font-bold">オプション設定</label>
                 <button
@@ -1548,7 +1564,6 @@ export default function App() {
                   <p className="text-xs text-gray-400 mt-1">オプションなし</p>
                 )}
               </div>
-
               <div className="border-t pt-4 space-y-2">
                 <label className="flex items-center gap-2 text-sm font-bold">
                   <input
@@ -1637,6 +1652,25 @@ export default function App() {
             -¥{aggregated.summary.totalExpenses.toLocaleString()}
           </span>
         </div>
+
+        {/* ★追加: 経費の内訳（誰がいくら払ったか） */}
+        <div className="mt-2 pt-2 border-t border-dashed border-stone-200 text-xs text-stone-500">
+          <div className="flex justify-between">
+            <span>高橋 立替</span>
+            <span>
+              ¥{aggregated.summary.totalTakahashiPay.toLocaleString()}
+            </span>
+          </div>
+          <div className="flex justify-between">
+            <span>浜田 立替</span>
+            <span>¥{aggregated.summary.totalHamadaPay.toLocaleString()}</span>
+          </div>
+          <div className="flex justify-between">
+            <span>ランタナ払</span>
+            <span>¥{aggregated.summary.totalLantanaPay.toLocaleString()}</span>
+          </div>
+        </div>
+
         <div className="border-t pt-2 flex justify-between items-center bg-stone-50 p-2 rounded">
           <span className="font-bold text-stone-700">粗利益</span>
           <span className="font-mono text-xl font-bold">
@@ -1720,7 +1754,7 @@ export default function App() {
             step="1000"
             value={aggregated.summary.salaryPerPerson}
             onChange={(e) => setManualSalary(Number(e.target.value))}
-            className="w-full h-2 bg-stone-200 rounded-lg appearance-none cursor-pointer accent-orange-600"
+            className="w-full accent-orange-600"
           />
           <div className="flex justify-end mt-2">
             <button
@@ -1760,7 +1794,7 @@ export default function App() {
               }
               className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 transition-colors ${
                 aggregated.summary.remainingLantanaSavings > 0
-                  ? "bg-green-500 text-white hover:bg-green-600 shadow-md"
+                  ? "bg-orange-500 text-white hover:bg-orange-600 shadow-md"
                   : "bg-stone-100 text-stone-400 cursor-not-allowed"
               }`}
               disabled={aggregated.summary.remainingLantanaSavings <= 0}
@@ -1808,15 +1842,28 @@ export default function App() {
                           {row.expenseDetails.map((e) => (
                             <div
                               key={e.id}
-                              className="flex justify-between text-xs"
+                              className="flex justify-between text-xs items-center"
                             >
-                              <span>[経費] {e.item}</span>
+                              <span className="flex-1">
+                                {/* ★追加: 支払者バッジを表示 */}
+                                <span
+                                  className={`px-1 rounded text-[10px] mr-1 ${
+                                    e.payer === "ランタナ"
+                                      ? "bg-green-100 text-green-700"
+                                      : "bg-stone-200 text-stone-600"
+                                  }`}
+                                >
+                                  {e.payer}
+                                </span>
+                                {e.item}
+                              </span>
                               <span>
-                                ¥{e.amount}{" "}
+                                ¥{e.amount.toLocaleString()}{" "}
                                 <button
                                   onClick={(ev) =>
                                     confirmDelete(ev, "expenses", e.id, "削除?")
                                   }
+                                  className="ml-1 text-stone-400"
                                 >
                                   <Trash2 size={12} />
                                 </button>
@@ -1846,12 +1893,23 @@ export default function App() {
                                 </span>
                               </div>
                               <div className="text-[10px] text-gray-500">
+                                {/* 安全なオプション表示 */}
                                 {o.items?.map((item, idx) => (
                                   <div key={idx}>
-                                    {item.name}{" "}
+                                    {item.name}
                                     {item.options?.length > 0 &&
-                                      `[${item.options.join(",")}]`}{" "}
-                                    {item.isTakeout ? "(To)" : ""}
+                                      ` [${
+                                        Array.isArray(item.options)
+                                          ? item.options
+                                              .map((opt) =>
+                                                typeof opt === "string"
+                                                  ? opt
+                                                  : opt.label
+                                              )
+                                              .join(", ")
+                                          : ""
+                                      }]`}
+                                    {item.isTakeout ? " (To)" : ""}
                                   </div>
                                 ))}
                               </div>
@@ -2068,10 +2126,7 @@ export default function App() {
                       ¥{getPrice(selectedItem, "single")}
                     </span>
                   </button>
-
-                  {/* ★修正：セット販売が有効（hasSets=true）なら必ず表示（typeがなくても） */}
-                  {(selectedItem.hasSets ||
-                    (selectedItem.priceSetA && selectedItem.priceSetB)) && (
+                  {selectedItem.type === "food" && (
                     <>
                       <button
                         onClick={() =>
@@ -2111,9 +2166,7 @@ export default function App() {
                       </button>
                     </>
                   )}
-
-                  {/* デザートセットも同様に表示 */}
-                  {selectedItem.priceDessertSet && (
+                  {selectedItem.type === "dessert" && (
                     <button
                       onClick={() =>
                         addToCart(selectedItem, "setDessert", isTakeoutMode)
