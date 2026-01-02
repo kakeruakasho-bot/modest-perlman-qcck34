@@ -333,7 +333,6 @@ export default function App() {
     script.src = "https://cdn.tailwindcss.com";
     document.head.appendChild(script);
 
-    // アプリアイコン設定
     const iconUrl =
       "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%23ea580c'/%3E%3Ctext x='50' y='70' font-size='50' text-anchor='middle' fill='white'%3E☕️%3C/text%3E%3C/svg%3E";
     let link = document.querySelector("link[rel~='icon']");
@@ -521,7 +520,6 @@ export default function App() {
     }
   };
 
-  // 過去の注文データを一括修正する機能
   const fixPastOrdersToTakeout = async (targetName) => {
     if (
       !window.confirm(
@@ -1164,6 +1162,7 @@ export default function App() {
   }, [analysisPeriod, currentMonth, orders]);
 
   // --- Render Functions ---
+  // すべてのRender関数をここ（returnより前）に定義します
 
   const renderAnalysis = () => (
     <div className="max-w-2xl mx-auto space-y-6 pb-20">
@@ -1510,6 +1509,8 @@ export default function App() {
                 className="border p-2 w-full rounded"
                 required
               />
+
+              {/* オプション設定フォーム */}
               <div className="border-t pt-4">
                 <label className="text-sm font-bold">オプション設定</label>
                 <button
@@ -1564,6 +1565,7 @@ export default function App() {
                   <p className="text-xs text-gray-400 mt-1">オプションなし</p>
                 )}
               </div>
+
               <div className="border-t pt-4 space-y-2">
                 <label className="flex items-center gap-2 text-sm font-bold">
                   <input
@@ -2126,7 +2128,10 @@ export default function App() {
                       ¥{getPrice(selectedItem, "single")}
                     </span>
                   </button>
-                  {selectedItem.type === "food" && (
+
+                  {/* ★修正：セット販売が有効（hasSets=true）なら必ず表示（typeがなくても） */}
+                  {(selectedItem.hasSets ||
+                    (selectedItem.priceSetA && selectedItem.priceSetB)) && (
                     <>
                       <button
                         onClick={() =>
@@ -2166,7 +2171,9 @@ export default function App() {
                       </button>
                     </>
                   )}
-                  {selectedItem.type === "dessert" && (
+
+                  {/* デザートセットも同様に表示 */}
+                  {selectedItem.priceDessertSet && (
                     <button
                       onClick={() =>
                         addToCart(selectedItem, "setDessert", isTakeoutMode)
