@@ -66,6 +66,7 @@ import {
   Zap,
   Package,
   Save,
+  Tags
 } from "lucide-react";
 
 // --- Firebase Initialization ---
@@ -99,111 +100,13 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-// --- Initial Data ---
-const INITIAL_MENU_ITEMS = [
-  {
-    name: "牛スジと野菜ピュレのカレー",
-    basePrice: 1000,
-    type: "food",
-    hasSets: true,
-    priceSetA: 1300,
-    priceSetB: 1700,
-    canTakeout: true,
-    imageColor: "bg-amber-100",
-    options: [
-      { label: "ルー大盛", price: 100 },
-      { label: "ご飯大盛", price: 100 },
-    ],
-  },
-  {
-    name: "ほうとう",
-    basePrice: 1000,
-    type: "food",
-    hasSets: true,
-    priceSetA: 1300,
-    priceSetB: 1700,
-    canTakeout: false,
-    imageColor: "bg-orange-100",
-    options: [],
-  },
-  {
-    name: "かぼちゃのポタージュ",
-    basePrice: 900,
-    type: "food",
-    hasSets: true,
-    priceSetA: 1200,
-    priceSetB: 1600,
-    canTakeout: false,
-    imageColor: "bg-yellow-100",
-    options: [],
-  },
-  {
-    name: "よくばりセット",
-    basePrice: 2000,
-    type: "food",
-    hasSets: false,
-    canTakeout: false,
-    imageColor: "bg-red-100",
-    options: [],
-  },
-  {
-    name: "COLDドリンク",
-    basePrice: 400,
-    type: "drink",
-    hasSets: false,
-    canTakeout: true,
-    imageColor: "bg-blue-50",
-    options: [],
-  },
-  {
-    name: "HOTドリンク",
-    basePrice: 400,
-    type: "drink",
-    hasSets: false,
-    canTakeout: true,
-    imageColor: "bg-red-50",
-    options: [],
-  },
-  {
-    name: "おおまさりのお汁粉",
-    basePrice: 500,
-    type: "dessert",
-    hasSets: true,
-    priceDessertSet: 800,
-    canTakeout: false,
-    imageColor: "bg-stone-100",
-    options: [],
-  },
-  {
-    name: "フルーツのコンポートゼリー",
-    basePrice: 500,
-    type: "dessert",
-    hasSets: true,
-    priceDessertSet: 800,
-    canTakeout: false,
-    imageColor: "bg-pink-100",
-    options: [],
-  },
-  {
-    name: "ルバーブのクランブルサンデー",
-    basePrice: 500,
-    type: "dessert",
-    hasSets: true,
-    priceDessertSet: 800,
-    canTakeout: false,
-    imageColor: "bg-rose-100",
-    options: [],
-  },
-  {
-    name: "自家製アイス各種",
-    basePrice: 400,
-    type: "dessert",
-    hasSets: false,
-    canTakeout: false,
-    imageColor: "bg-cyan-50",
-    options: [],
-  },
-];
+// --- 古いデータの互換用マップ ---
+const LEGACY_CATEGORY_MAP = { 
+  food: '食事', 
+  drink: 'ドリンク', 
+  dessert: 'スイーツ', 
+  deli: '惣菜' 
+};
 
 const SET_OPTIONS = {
   single: { label: "単品" },
@@ -233,7 +136,7 @@ const Button = ({
     "px-4 py-2 rounded-lg font-medium transition-all active:scale-95 flex items-center justify-center gap-2";
   const variants = {
     primary: "bg-orange-600 text-white hover:bg-orange-700 shadow-md",
-    secondary: "bg-stone-100 text-stone-700 hover:bg-stone-200",
+    secondary: "bg-stone-100 text-stone-700 hover:bg-stone-200 border border-stone-200",
     outline: "border-2 border-orange-600 text-orange-600 hover:bg-orange-50",
     danger: "bg-red-500 text-white hover:bg-red-600 shadow-md",
     success: "bg-green-600 text-white hover:bg-green-700 shadow-md",
@@ -300,6 +203,12 @@ export default function App() {
   const [isTakeoutMode, setIsTakeoutMode] = useState(false);
   const [expenseType, setExpenseType] = useState("expense");
 
+  // --- タブ分類・カテゴリ管理用の状態 ---
+  const [categories, setCategories] = useState([]);
+  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState("all");
+
   const [selectedOptions, setSelectedOptions] = useState([]);
   const [editingOptions, setEditingOptions] = useState([]);
 
@@ -315,6 +224,14 @@ export default function App() {
 
   const [editingFund, setEditingFund] = useState(null);
 
+  // 画面に表示するカテゴリ（Firebaseになければデフォルトを一時的に表示）
+  const displayCategories = categories.length > 0 ? categories : [
+    { id: 'f1', name: '食事' },
+    { id: 'f2', name: 'ドリンク' },
+    { id: 'f3', name: 'スイーツ' },
+    { id: 'f4', name: '惣菜' },
+  ];
+
   // Set initial editing options when opening menu editor
   useEffect(() => {
     if (editingMenu && editingMenu.options) {
@@ -323,10 +240,6 @@ export default function App() {
       setEditingOptions([]);
     }
   }, [editingMenu]);
-
-  useEffect(() => {
-    // 処理なし
-  }, [selectedItem]);
 
   useEffect(() => {
     const script = document.createElement("script");
@@ -396,6 +309,24 @@ export default function App() {
       if (err.code === "permission-denied" && !isGeminiEnv)
         setPermissionError(true);
     };
+
+    // --- カテゴリの取得 ---
+    const qCategories = query(
+      collection(db, "artifacts", appId, "public", "data", "categories")
+    );
+    const unsubCategories = onSnapshot(
+      qCategories,
+      (snapshot) => {
+        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        // 作成順（または指定の並び順）でソート
+        data.sort((a, b) => {
+          if (a.order !== undefined && b.order !== undefined) return a.order - b.order;
+          return (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0);
+        });
+        setCategories(data);
+      },
+      handleError
+    );
 
     const qMenu = query(
       collection(db, "artifacts", appId, "public", "data", "menu_items")
@@ -486,6 +417,7 @@ export default function App() {
     );
 
     return () => {
+      unsubCategories();
       unsubMenu();
       unsubOrders();
       unsubExpenses();
@@ -493,6 +425,49 @@ export default function App() {
       unsubFunds();
     };
   }, [user]);
+
+  // --- Category Management Functions ---
+  const initializeCategories = async () => {
+    const defaults = ['食事', 'ドリンク', 'スイーツ', '惣菜'];
+    const batch = writeBatch(db);
+    defaults.forEach((name, idx) => {
+      const docRef = doc(collection(db, "artifacts", appId, "public", "data", "categories"));
+      batch.set(docRef, { name, order: idx + 1, createdAt: serverTimestamp() });
+    });
+    try {
+      await batch.commit();
+      alert("基本カテゴリを追加しました！");
+    } catch(err) {
+      alert("エラー: " + err.message);
+    }
+  };
+
+  const addCategory = async (e) => {
+    e.preventDefault();
+    const name = newCategoryName.trim();
+    if (!name) return;
+    if (categories.some(c => c.name === name)) {
+      alert("すでに同じ名前のカテゴリがあります！");
+      return;
+    }
+    try {
+      await addDoc(collection(db, "artifacts", appId, "public", "data", "categories"), {
+        name: name,
+        order: categories.length + 1,
+        createdAt: serverTimestamp()
+      });
+      setNewCategoryName("");
+    } catch (err) {
+      alert("エラー: " + err.message);
+    }
+  };
+
+  const deleteCategory = async (id) => {
+    if (window.confirm("このカテゴリを削除しますか？\n（※メニューのデータ自体は消えませんが、タブからは見えなくなります）")) {
+      await deleteDoc(doc(db, "artifacts", appId, "public", "data", "categories", id));
+    }
+  };
+
 
   // --- Logic Helpers ---
   const confirmDelete = (e, collectionName, id, message) => {
@@ -705,7 +680,7 @@ export default function App() {
     const data = {
       name: formData.get("name"),
       basePrice: Number(formData.get("basePrice")),
-      type: formData.get("type"),
+      category: formData.get("category"), // ★カテゴリ名を直接保存
       hasSets: formData.get("hasSets") === "on",
       priceSetA: formData.get("priceSetA")
         ? Number(formData.get("priceSetA"))
@@ -721,11 +696,16 @@ export default function App() {
       imageColor: formData.get("imageColor"),
       options: editingOptions,
     };
+
+    // ★カテゴリに応じたボタンの色を自動設定（自分で変えていない場合）
     if (!data.imageColor) {
-      if (data.type === "food") data.imageColor = "bg-orange-100";
-      if (data.type === "drink") data.imageColor = "bg-blue-50";
-      if (data.type === "dessert") data.imageColor = "bg-pink-100";
+      if (data.category === "食事") data.imageColor = "bg-orange-100";
+      else if (data.category === "ドリンク") data.imageColor = "bg-blue-50";
+      else if (data.category === "スイーツ") data.imageColor = "bg-pink-100";
+      else if (data.category === "惣菜") data.imageColor = "bg-green-100";
+      else data.imageColor = "bg-stone-100"; // その他の新カテゴリはシックな色に
     }
+    
     if (data.isTakeoutOnly) {
       data.canTakeout = true;
     }
@@ -799,7 +779,6 @@ export default function App() {
     setCart(cart.filter((c) => c.tempId !== tempId));
   const calculateTotal = () => cart.reduce((sum, item) => sum + item.price, 0);
 
-  // ★ PayPay追加修正：引数に支払方法を受け取り、PayPayなら経費も登録する
   const handleCheckout = async (paymentMethod = "cash") => {
     if (cart.length === 0 || !user) return;
     const totalAmount = calculateTotal();
@@ -810,7 +789,7 @@ export default function App() {
       date: orderDate,
       staff: staffName,
       status: "completed",
-      paymentMethod: paymentMethod, // ★追加: 支払方法を保存
+      paymentMethod: paymentMethod,
     };
     try {
       await addDoc(
@@ -818,7 +797,6 @@ export default function App() {
         orderData
       );
 
-      // ★追加: PayPayの場合は自動で経費登録
       if (paymentMethod === "paypay") {
         const fee = Math.floor(totalAmount * 0.0198);
         await addDoc(
@@ -836,11 +814,7 @@ export default function App() {
 
       setCart([]);
       setIsCheckoutModalOpen(false);
-      alert(
-        `${
-          paymentMethod === "paypay" ? "PayPay" : "現金"
-        }でお会計しました！\n（合計: ¥${totalAmount}）`
-      );
+      alert(`${paymentMethod === "paypay" ? "PayPay" : "現金"}でお会計しました！\n（合計: ¥${totalAmount}）`);
     } catch (error) {
       alert("保存失敗: " + error.message);
     }
@@ -1478,7 +1452,13 @@ export default function App() {
     <div className="max-w-2xl mx-auto space-y-6 pb-20">
       <div className="flex justify-between mb-4">
         <h2 className="font-bold">メニュー管理</h2>
-        <Button onClick={() => setEditingMenu({})}>新規追加</Button>
+        <div className="flex gap-2">
+          {/* ★追加: カテゴリ管理ボタン */}
+          <Button variant="secondary" onClick={() => setIsCategoryModalOpen(true)}>
+            <Tags size={16} /> タブの編集
+          </Button>
+          <Button onClick={() => setEditingMenu({})}>新規追加</Button>
+        </div>
       </div>
       <div className="space-y-2">
         {menuItems.map((m) => (
@@ -1486,7 +1466,12 @@ export default function App() {
             key={m.id}
             className="flex justify-between p-3 bg-white border rounded items-center"
           >
-            <div>{m.name}</div>
+            <div>
+              <span className="font-bold">{m.name}</span>
+              <span className="ml-2 text-[10px] bg-stone-100 text-stone-500 px-2 py-0.5 rounded">
+                {m.category || LEGACY_CATEGORY_MAP[m.type] || '未分類'}
+              </span>
+            </div>
             <div className="flex gap-2 items-center">
               <button
                 onClick={() => fixPastOrdersToTakeout(m.name)}
@@ -1510,8 +1495,60 @@ export default function App() {
           </div>
         ))}
       </div>
+
+      {/* ★追加: タブ分類（カテゴリ）編集モーダル */}
+      {isCategoryModalOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white p-6 rounded-xl w-full max-w-sm">
+            <h3 className="font-bold mb-2 flex items-center gap-2">
+              <Settings size={18} className="text-stone-500" />
+              タブ分類（カテゴリ）の編集
+            </h3>
+            <p className="text-[10px] text-stone-500 mb-4">
+              レジ画面の上部に表示されるタブを自由にカスタマイズできます。
+            </p>
+            
+            {categories.length === 0 && (
+              <div className="mb-4 bg-orange-50 p-4 rounded-lg border border-orange-200 text-center">
+                <p className="text-sm text-orange-800 font-bold mb-2">まだカテゴリがありません</p>
+                <p className="text-[10px] text-orange-600 mb-3">まずは基本のカテゴリを自動追加するのがおすすめです。</p>
+                <Button onClick={initializeCategories} className="w-full text-sm">基本カテゴリをセットする</Button>
+              </div>
+            )}
+
+            <div className="space-y-2 mb-6 max-h-60 overflow-y-auto">
+              {categories.map((c, i) => (
+                <div key={c.id} className="flex justify-between items-center p-3 border border-stone-200 rounded-lg bg-stone-50">
+                  <span className="font-bold text-stone-700 flex items-center gap-2">
+                    <span className="text-stone-400 text-xs">{i + 1}.</span> {c.name}
+                  </span>
+                  <button onClick={() => deleteCategory(c.id)} className="text-stone-400 hover:text-red-500 p-1">
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <form onSubmit={addCategory} className="flex gap-2 mb-6 border-t pt-4 border-stone-200">
+              <input 
+                type="text" 
+                value={newCategoryName} 
+                onChange={e => setNewCategoryName(e.target.value)} 
+                placeholder="新しいカテゴリ (例: 夏限定)" 
+                className="border border-stone-300 p-2 rounded-lg flex-1 text-sm focus:outline-none focus:border-orange-500" 
+              />
+              <Button type="submit">追加</Button>
+            </form>
+
+            <Button variant="secondary" onClick={() => setIsCategoryModalOpen(false)} className="w-full py-3">
+              閉じる
+            </Button>
+          </div>
+        </div>
+      )}
+
       {editingMenu && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white p-6 rounded-xl w-full max-w-md h-[90vh] overflow-y-auto">
             <h3 className="font-bold mb-4">メニュー編集</h3>
             <form onSubmit={saveMenuItem} className="space-y-4">
@@ -1530,6 +1567,21 @@ export default function App() {
                 className="border p-2 w-full rounded"
                 required
               />
+
+              {/* ★修正: 自分で作ったカテゴリを選択できるように */}
+              <div>
+                <label className="text-sm font-bold text-stone-500 block mb-1">カテゴリ (タブ分類)</label>
+                <select 
+                  name="category" 
+                  defaultValue={editingMenu.category || LEGACY_CATEGORY_MAP[editingMenu.type] || (displayCategories[0]?.name || '')} 
+                  className="border p-2 w-full rounded"
+                  required
+                >
+                  {displayCategories.map(c => (
+                    <option key={c.id} value={c.name}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
 
               {/* オプション設定フォーム */}
               <div className="border-t pt-4">
@@ -1901,11 +1953,7 @@ export default function App() {
                                     hour: "2-digit",
                                     minute: "2-digit",
                                   })}
-                                  {o.paymentMethod === "paypay" && (
-                                    <span className="ml-2 text-[10px] bg-red-100 text-red-600 px-1 rounded">
-                                      PayPay
-                                    </span>
-                                  )}
+                                  {o.paymentMethod === 'paypay' && <span className="ml-2 text-[10px] bg-red-100 text-red-600 px-1 rounded">PayPay</span>}
                                 </span>
                                 <span>
                                   ¥{o.total}{" "}
@@ -1996,8 +2044,39 @@ export default function App() {
           </button>
         </div>
 
+        {/* ★追加：カテゴリ切り替えタブ */}
+        <div className="flex bg-stone-200 p-1 rounded-lg mb-4 overflow-x-auto gap-1">
+          <button
+            onClick={() => setSelectedCategory("all")}
+            className={`px-4 py-2 rounded-md text-sm font-bold transition-all whitespace-nowrap ${
+              selectedCategory === "all" ? "bg-white text-orange-600 shadow" : "text-stone-500 hover:bg-stone-300"
+            }`}
+          >
+            すべて
+          </button>
+          {displayCategories.map(cat => (
+            <button
+              key={cat.id}
+              onClick={() => setSelectedCategory(cat.name)}
+              className={`px-4 py-2 rounded-md text-sm font-bold transition-all whitespace-nowrap ${
+                selectedCategory === cat.name ? "bg-white text-orange-600 shadow" : "text-stone-500 hover:bg-stone-300"
+              }`}
+            >
+              {cat.name}
+            </button>
+          ))}
+        </div>
+
         <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-          {menuItems.map((item) => (
+          {/* ★修正：選択されたカテゴリのメニューだけを表示 */}
+          {menuItems
+            .filter(item => {
+              if (selectedCategory === "all") return true;
+              // 新しいカテゴリ形式、または古いタイプ(food等)を照らし合わせる
+              const itemCatName = item.category || LEGACY_CATEGORY_MAP[item.type] || '未分類';
+              return itemCatName === selectedCategory;
+            })
+            .map((item) => (
             <button
               key={item.id}
               onClick={() => {
@@ -2284,8 +2363,8 @@ export default function App() {
           </div>
         </div>
       )}
-
-      {/* お会計モーダル（PayPay決済ボタン追加） */}
+      
+      {/* お会計モーダル */}
       {isCheckoutModalOpen && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl w-full max-w-sm p-6 text-center space-y-6">
