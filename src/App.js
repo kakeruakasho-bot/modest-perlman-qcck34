@@ -235,7 +235,7 @@ const Button = ({
     primary: "bg-orange-600 text-white hover:bg-orange-700 shadow-md",
     secondary: "bg-stone-100 text-stone-700 hover:bg-stone-200",
     outline: "border-2 border-orange-600 text-orange-600 hover:bg-orange-50",
-    danger: "bg-red-50 text-red-600 hover:bg-red-100",
+    danger: "bg-red-500 text-white hover:bg-red-600 shadow-md",
     success: "bg-green-600 text-white hover:bg-green-700 shadow-md",
   };
   return (
@@ -717,7 +717,6 @@ export default function App() {
         ? Number(formData.get("priceDessertSet"))
         : null,
       canTakeout: formData.get("canTakeout") === "on",
-      // ★追加：テイクアウト専門フラグ
       isTakeoutOnly: formData.get("isTakeoutOnly") === "on",
       imageColor: formData.get("imageColor"),
       options: editingOptions,
@@ -763,7 +762,7 @@ export default function App() {
       alert("初期データは削除できません");
       return;
     }
-    if (confirm("本当に削除しますか？")) {
+    if (window.confirm("本当に削除しますか？")) {
       await deleteDoc(
         doc(db, "artifacts", appId, "public", "data", "menu_items", id)
       );
@@ -780,8 +779,6 @@ export default function App() {
     });
 
     const price = base + optionPrice;
-
-    // ★ここがポイント：商品が「テイクアウト専門」なら強制的にテイクアウト扱いにする
     const isTakeout = item.isTakeoutOnly || isTakeoutMode;
 
     const newItem = {
@@ -801,23 +798,49 @@ export default function App() {
   const removeFromCart = (tempId) =>
     setCart(cart.filter((c) => c.tempId !== tempId));
   const calculateTotal = () => cart.reduce((sum, item) => sum + item.price, 0);
-  const handleCheckout = async () => {
+
+  // ★ PayPay追加修正：引数に支払方法を受け取り、PayPayなら経費も登録する
+  const handleCheckout = async (paymentMethod = "cash") => {
     if (cart.length === 0 || !user) return;
+    const totalAmount = calculateTotal();
     const orderData = {
       items: cart,
-      total: calculateTotal(),
+      total: totalAmount,
       createdAt: serverTimestamp(),
       date: orderDate,
       staff: staffName,
       status: "completed",
+      paymentMethod: paymentMethod, // ★追加: 支払方法を保存
     };
     try {
       await addDoc(
         collection(db, "artifacts", appId, "public", "data", "orders"),
         orderData
       );
+
+      // ★追加: PayPayの場合は自動で経費登録
+      if (paymentMethod === "paypay") {
+        const fee = Math.floor(totalAmount * 0.0198);
+        await addDoc(
+          collection(db, "artifacts", appId, "public", "data", "expenses"),
+          {
+            date: orderDate,
+            item: "PayPay決済手数料",
+            amount: fee,
+            payer: "ランタナ",
+            category: "その他",
+            createdAt: serverTimestamp(),
+          }
+        );
+      }
+
       setCart([]);
       setIsCheckoutModalOpen(false);
+      alert(
+        `${
+          paymentMethod === "paypay" ? "PayPay" : "現金"
+        }でお会計しました！\n（合計: ¥${totalAmount}）`
+      );
     } catch (error) {
       alert("保存失敗: " + error.message);
     }
@@ -1089,7 +1112,7 @@ export default function App() {
         profit: profitBeforeTax,
         salaryPerPerson: finalSalaryPerPerson,
         defaultSalaryPerPerson,
-        lantanaSavings: savingOnly, // 純粋な端数貯金
+        lantanaSavings: savingOnly,
         remainingLantanaSavings,
         remainingTax,
         transferredLantanaSavings,
@@ -1162,8 +1185,6 @@ export default function App() {
   }, [analysisPeriod, currentMonth, orders]);
 
   // --- Render Functions ---
-  // すべてのRender関数をここ（returnより前）に定義します
-
   const renderAnalysis = () => (
     <div className="max-w-2xl mx-auto space-y-6 pb-20">
       <h2 className="text-xl font-bold text-stone-700 mb-6 flex items-center gap-2">
@@ -1655,7 +1676,6 @@ export default function App() {
           </span>
         </div>
 
-        {/* ★追加: 経費の内訳（誰がいくら払ったか） */}
         <div className="mt-2 pt-2 border-t border-dashed border-stone-200 text-xs text-stone-500">
           <div className="flex justify-between">
             <span>高橋 立替</span>
@@ -1847,7 +1867,6 @@ export default function App() {
                               className="flex justify-between text-xs items-center"
                             >
                               <span className="flex-1">
-                                {/* ★追加: 支払者バッジを表示 */}
                                 <span
                                   className={`px-1 rounded text-[10px] mr-1 ${
                                     e.payer === "ランタナ"
@@ -1882,6 +1901,11 @@ export default function App() {
                                     hour: "2-digit",
                                     minute: "2-digit",
                                   })}
+                                  {o.paymentMethod === "paypay" && (
+                                    <span className="ml-2 text-[10px] bg-red-100 text-red-600 px-1 rounded">
+                                      PayPay
+                                    </span>
+                                  )}
                                 </span>
                                 <span>
                                   ¥{o.total}{" "}
@@ -1895,7 +1919,6 @@ export default function App() {
                                 </span>
                               </div>
                               <div className="text-[10px] text-gray-500">
-                                {/* 安全なオプション表示 */}
                                 {o.items?.map((item, idx) => (
                                   <div key={idx}>
                                     {item.name}
@@ -1984,7 +2007,6 @@ export default function App() {
                   addToCart(item, item.isFixedSet ? "setB" : "single", false);
                 }
               }}
-              // ★修正：canTakeoutが未設定（undefined）の場合も押せるようにする
               disabled={isTakeoutMode && item.canTakeout === false}
               className={`p-4 rounded-xl text-left transition-all active:scale-95 shadow-sm border border-stone-100 flex flex-col justify-between h-32 ${
                 item.imageColor
@@ -1994,7 +2016,6 @@ export default function App() {
                   : ""
               } relative`}
             >
-              {/* テイクアウト専門バッジ */}
               {item.isTakeoutOnly && (
                 <span className="absolute top-2 right-2 bg-green-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
                   <Package size={10} /> Takeout Only
@@ -2062,7 +2083,6 @@ export default function App() {
                     {item.options && item.options.length > 0 && (
                       <div className="flex flex-wrap gap-1 mt-1">
                         {item.options.map((opt, i) => (
-                          // 安全な表示（文字列またはオブジェクトに対応）
                           <span
                             key={i}
                             className="text-[10px] bg-stone-100 text-stone-500 px-1 rounded border border-stone-200"
@@ -2129,7 +2149,6 @@ export default function App() {
                     </span>
                   </button>
 
-                  {/* ★修正：セット販売が有効（hasSets=true）なら必ず表示（typeがなくても） */}
                   {(selectedItem.hasSets ||
                     (selectedItem.priceSetA && selectedItem.priceSetB)) && (
                     <>
@@ -2172,7 +2191,6 @@ export default function App() {
                     </>
                   )}
 
-                  {/* デザートセットも同様に表示 */}
                   {selectedItem.priceDessertSet && (
                     <button
                       onClick={() =>
@@ -2196,7 +2214,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* オプション選択（大盛りなど） */}
               {selectedItem.options && selectedItem.options.length > 0 && (
                 <div>
                   <label className="text-sm font-bold text-stone-500 mb-2 block">
@@ -2267,6 +2284,8 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* お会計モーダル（PayPay決済ボタン追加） */}
       {isCheckoutModalOpen && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl w-full max-w-sm p-6 text-center space-y-6">
@@ -2277,18 +2296,32 @@ export default function App() {
                 ¥{calculateTotal().toLocaleString()}
               </p>
             </div>
-            <div className="flex gap-3">
+            <div className="flex gap-2">
               <Button
                 variant="secondary"
-                className="flex-1"
+                className="flex-1 whitespace-nowrap text-sm px-2"
                 onClick={() => setIsCheckoutModalOpen(false)}
               >
                 戻る
               </Button>
-              <Button className="flex-1" onClick={handleCheckout}>
-                確定する
+              <Button
+                variant="success"
+                className="flex-1 whitespace-nowrap text-sm px-2"
+                onClick={() => handleCheckout("cash")}
+              >
+                現金で確定
+              </Button>
+              <Button
+                variant="danger"
+                className="flex-1 whitespace-nowrap text-sm px-2"
+                onClick={() => handleCheckout("paypay")}
+              >
+                PayPay決済
               </Button>
             </div>
+            <p className="text-[10px] text-stone-500 mt-2 text-left bg-stone-50 p-2 rounded">
+              ※PayPayを選ぶと、自動的に合計の1.98%が「ランタナ払いの経費」として記録されます。
+            </p>
           </div>
         </div>
       )}
