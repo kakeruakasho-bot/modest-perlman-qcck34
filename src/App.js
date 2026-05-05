@@ -66,7 +66,7 @@ import {
   Zap,
   Package,
   Save,
-  Tags
+  Tags,
 } from "lucide-react";
 
 // --- Firebase Initialization ---
@@ -101,11 +101,11 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 
 // --- 古いデータの互換用マップ ---
-const LEGACY_CATEGORY_MAP = { 
-  food: '食事', 
-  drink: 'ドリンク', 
-  dessert: 'スイーツ', 
-  deli: '惣菜' 
+const LEGACY_CATEGORY_MAP = {
+  food: "食事",
+  drink: "ドリンク",
+  dessert: "スイーツ",
+  deli: "惣菜",
 };
 
 const SET_OPTIONS = {
@@ -136,7 +136,8 @@ const Button = ({
     "px-4 py-2 rounded-lg font-medium transition-all active:scale-95 flex items-center justify-center gap-2";
   const variants = {
     primary: "bg-orange-600 text-white hover:bg-orange-700 shadow-md",
-    secondary: "bg-stone-100 text-stone-700 hover:bg-stone-200 border border-stone-200",
+    secondary:
+      "bg-stone-100 text-stone-700 hover:bg-stone-200 border border-stone-200",
     outline: "border-2 border-orange-600 text-orange-600 hover:bg-orange-50",
     danger: "bg-red-500 text-white hover:bg-red-600 shadow-md",
     success: "bg-green-600 text-white hover:bg-green-700 shadow-md",
@@ -225,12 +226,15 @@ export default function App() {
   const [editingFund, setEditingFund] = useState(null);
 
   // 画面に表示するカテゴリ（Firebaseになければデフォルトを一時的に表示）
-  const displayCategories = categories.length > 0 ? categories : [
-    { id: 'f1', name: '食事' },
-    { id: 'f2', name: 'ドリンク' },
-    { id: 'f3', name: 'スイーツ' },
-    { id: 'f4', name: '惣菜' },
-  ];
+  const displayCategories =
+    categories.length > 0
+      ? categories
+      : [
+          { id: "f1", name: "食事" },
+          { id: "f2", name: "ドリンク" },
+          { id: "f3", name: "スイーツ" },
+          { id: "f4", name: "惣菜" },
+        ];
 
   // Set initial editing options when opening menu editor
   useEffect(() => {
@@ -240,6 +244,10 @@ export default function App() {
       setEditingOptions([]);
     }
   }, [editingMenu]);
+
+  useEffect(() => {
+    // 処理なし
+  }, [selectedItem]);
 
   useEffect(() => {
     const script = document.createElement("script");
@@ -317,10 +325,14 @@ export default function App() {
     const unsubCategories = onSnapshot(
       qCategories,
       (snapshot) => {
-        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const data = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
         // 作成順（または指定の並び順）でソート
         data.sort((a, b) => {
-          if (a.order !== undefined && b.order !== undefined) return a.order - b.order;
+          if (a.order !== undefined && b.order !== undefined)
+            return a.order - b.order;
           return (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0);
         });
         setCategories(data);
@@ -428,16 +440,18 @@ export default function App() {
 
   // --- Category Management Functions ---
   const initializeCategories = async () => {
-    const defaults = ['食事', 'ドリンク', 'スイーツ', '惣菜'];
+    const defaults = ["食事", "ドリンク", "スイーツ", "惣菜"];
     const batch = writeBatch(db);
     defaults.forEach((name, idx) => {
-      const docRef = doc(collection(db, "artifacts", appId, "public", "data", "categories"));
+      const docRef = doc(
+        collection(db, "artifacts", appId, "public", "data", "categories")
+      );
       batch.set(docRef, { name, order: idx + 1, createdAt: serverTimestamp() });
     });
     try {
       await batch.commit();
       alert("基本カテゴリを追加しました！");
-    } catch(err) {
+    } catch (err) {
       alert("エラー: " + err.message);
     }
   };
@@ -446,16 +460,19 @@ export default function App() {
     e.preventDefault();
     const name = newCategoryName.trim();
     if (!name) return;
-    if (categories.some(c => c.name === name)) {
+    if (categories.some((c) => c.name === name)) {
       alert("すでに同じ名前のカテゴリがあります！");
       return;
     }
     try {
-      await addDoc(collection(db, "artifacts", appId, "public", "data", "categories"), {
-        name: name,
-        order: categories.length + 1,
-        createdAt: serverTimestamp()
-      });
+      await addDoc(
+        collection(db, "artifacts", appId, "public", "data", "categories"),
+        {
+          name: name,
+          order: categories.length + 1,
+          createdAt: serverTimestamp(),
+        }
+      );
       setNewCategoryName("");
     } catch (err) {
       alert("エラー: " + err.message);
@@ -463,11 +480,16 @@ export default function App() {
   };
 
   const deleteCategory = async (id) => {
-    if (window.confirm("このカテゴリを削除しますか？\n（※メニューのデータ自体は消えませんが、タブからは見えなくなります）")) {
-      await deleteDoc(doc(db, "artifacts", appId, "public", "data", "categories", id));
+    if (
+      window.confirm(
+        "このカテゴリを削除しますか？\n（※メニューのデータ自体は消えませんが、タブからは見えなくなります）"
+      )
+    ) {
+      await deleteDoc(
+        doc(db, "artifacts", appId, "public", "data", "categories", id)
+      );
     }
   };
-
 
   // --- Logic Helpers ---
   const confirmDelete = (e, collectionName, id, message) => {
@@ -705,7 +727,7 @@ export default function App() {
       else if (data.category === "惣菜") data.imageColor = "bg-green-100";
       else data.imageColor = "bg-stone-100"; // その他の新カテゴリはシックな色に
     }
-    
+
     if (data.isTakeoutOnly) {
       data.canTakeout = true;
     }
@@ -814,7 +836,11 @@ export default function App() {
 
       setCart([]);
       setIsCheckoutModalOpen(false);
-      alert(`${paymentMethod === "paypay" ? "PayPay" : "現金"}でお会計しました！\n（合計: ¥${totalAmount}）`);
+      alert(
+        `${
+          paymentMethod === "paypay" ? "PayPay" : "現金"
+        }でお会計しました！\n（合計: ¥${totalAmount}）`
+      );
     } catch (error) {
       alert("保存失敗: " + error.message);
     }
@@ -930,6 +956,10 @@ export default function App() {
     let totalTax10Sales = 0;
     let totalTax8Sales = 0;
 
+    // ★追加: PayPayと現金の売上を分けるための変数
+    let totalPaypaySales = 0;
+    let totalCashSales = 0;
+
     let totalTakahashiPay = 0;
     let totalHamadaPay = 0;
     let totalLantanaPay = 0;
@@ -947,6 +977,8 @@ export default function App() {
           sales: 0,
           sales10: 0,
           sales8: 0,
+          paypaySales: 0, // ★日ごとのPayPay売上
+          cashSales: 0, // ★日ごとの現金売上
           expenses: 0,
           takahashiPay: 0,
           hamadaPay: 0,
@@ -962,6 +994,15 @@ export default function App() {
       totalSalesAll += order.total;
       dataByDate[d].orderCount += 1;
       dataByDate[d].rawOrders.push(order);
+
+      // ★追加: 支払方法ごとに売上を振り分け
+      if (order.paymentMethod === "paypay") {
+        dataByDate[d].paypaySales += order.total;
+        totalPaypaySales += order.total;
+      } else {
+        dataByDate[d].cashSales += order.total;
+        totalCashSales += order.total;
+      }
 
       if (order.items)
         order.items.forEach((item) => {
@@ -995,6 +1036,8 @@ export default function App() {
           sales: 0,
           sales10: 0,
           sales8: 0,
+          paypaySales: 0,
+          cashSales: 0,
           expenses: 0,
           takahashiPay: 0,
           hamadaPay: 0,
@@ -1079,6 +1122,8 @@ export default function App() {
       daily: sortedData,
       summary: {
         totalSales: totalSalesAll,
+        totalPaypaySales, // ★追加
+        totalCashSales, // ★追加
         totalExpenses: totalExpensesAll,
         totalTakahashiPay,
         totalHamadaPay,
@@ -1453,8 +1498,10 @@ export default function App() {
       <div className="flex justify-between mb-4">
         <h2 className="font-bold">メニュー管理</h2>
         <div className="flex gap-2">
-          {/* ★追加: カテゴリ管理ボタン */}
-          <Button variant="secondary" onClick={() => setIsCategoryModalOpen(true)}>
+          <Button
+            variant="secondary"
+            onClick={() => setIsCategoryModalOpen(true)}
+          >
             <Tags size={16} /> タブの編集
           </Button>
           <Button onClick={() => setEditingMenu({})}>新規追加</Button>
@@ -1469,7 +1516,7 @@ export default function App() {
             <div>
               <span className="font-bold">{m.name}</span>
               <span className="ml-2 text-[10px] bg-stone-100 text-stone-500 px-2 py-0.5 rounded">
-                {m.category || LEGACY_CATEGORY_MAP[m.type] || '未分類'}
+                {m.category || LEGACY_CATEGORY_MAP[m.type] || "未分類"}
               </span>
             </div>
             <div className="flex gap-2 items-center">
@@ -1496,7 +1543,7 @@ export default function App() {
         ))}
       </div>
 
-      {/* ★追加: タブ分類（カテゴリ）編集モーダル */}
+      {/* タブ分類（カテゴリ）編集モーダル */}
       {isCategoryModalOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white p-6 rounded-xl w-full max-w-sm">
@@ -1507,40 +1554,63 @@ export default function App() {
             <p className="text-[10px] text-stone-500 mb-4">
               レジ画面の上部に表示されるタブを自由にカスタマイズできます。
             </p>
-            
+
             {categories.length === 0 && (
               <div className="mb-4 bg-orange-50 p-4 rounded-lg border border-orange-200 text-center">
-                <p className="text-sm text-orange-800 font-bold mb-2">まだカテゴリがありません</p>
-                <p className="text-[10px] text-orange-600 mb-3">まずは基本のカテゴリを自動追加するのがおすすめです。</p>
-                <Button onClick={initializeCategories} className="w-full text-sm">基本カテゴリをセットする</Button>
+                <p className="text-sm text-orange-800 font-bold mb-2">
+                  まだカテゴリがありません
+                </p>
+                <p className="text-[10px] text-orange-600 mb-3">
+                  まずは基本のカテゴリを自動追加するのがおすすめです。
+                </p>
+                <Button
+                  onClick={initializeCategories}
+                  className="w-full text-sm"
+                >
+                  基本カテゴリをセットする
+                </Button>
               </div>
             )}
 
             <div className="space-y-2 mb-6 max-h-60 overflow-y-auto">
               {categories.map((c, i) => (
-                <div key={c.id} className="flex justify-between items-center p-3 border border-stone-200 rounded-lg bg-stone-50">
+                <div
+                  key={c.id}
+                  className="flex justify-between items-center p-3 border border-stone-200 rounded-lg bg-stone-50"
+                >
                   <span className="font-bold text-stone-700 flex items-center gap-2">
-                    <span className="text-stone-400 text-xs">{i + 1}.</span> {c.name}
+                    <span className="text-stone-400 text-xs">{i + 1}.</span>{" "}
+                    {c.name}
                   </span>
-                  <button onClick={() => deleteCategory(c.id)} className="text-stone-400 hover:text-red-500 p-1">
+                  <button
+                    onClick={() => deleteCategory(c.id)}
+                    className="text-stone-400 hover:text-red-500 p-1"
+                  >
                     <Trash2 size={16} />
                   </button>
                 </div>
               ))}
             </div>
 
-            <form onSubmit={addCategory} className="flex gap-2 mb-6 border-t pt-4 border-stone-200">
-              <input 
-                type="text" 
-                value={newCategoryName} 
-                onChange={e => setNewCategoryName(e.target.value)} 
-                placeholder="新しいカテゴリ (例: 夏限定)" 
-                className="border border-stone-300 p-2 rounded-lg flex-1 text-sm focus:outline-none focus:border-orange-500" 
+            <form
+              onSubmit={addCategory}
+              className="flex gap-2 mb-6 border-t pt-4 border-stone-200"
+            >
+              <input
+                type="text"
+                value={newCategoryName}
+                onChange={(e) => setNewCategoryName(e.target.value)}
+                placeholder="新しいカテゴリ (例: 夏限定)"
+                className="border border-stone-300 p-2 rounded-lg flex-1 text-sm focus:outline-none focus:border-orange-500"
               />
               <Button type="submit">追加</Button>
             </form>
 
-            <Button variant="secondary" onClick={() => setIsCategoryModalOpen(false)} className="w-full py-3">
+            <Button
+              variant="secondary"
+              onClick={() => setIsCategoryModalOpen(false)}
+              className="w-full py-3"
+            >
               閉じる
             </Button>
           </div>
@@ -1568,17 +1638,25 @@ export default function App() {
                 required
               />
 
-              {/* ★修正: 自分で作ったカテゴリを選択できるように */}
               <div>
-                <label className="text-sm font-bold text-stone-500 block mb-1">カテゴリ (タブ分類)</label>
-                <select 
-                  name="category" 
-                  defaultValue={editingMenu.category || LEGACY_CATEGORY_MAP[editingMenu.type] || (displayCategories[0]?.name || '')} 
+                <label className="text-sm font-bold text-stone-500 block mb-1">
+                  カテゴリ (タブ分類)
+                </label>
+                <select
+                  name="category"
+                  defaultValue={
+                    editingMenu.category ||
+                    LEGACY_CATEGORY_MAP[editingMenu.type] ||
+                    displayCategories[0]?.name ||
+                    ""
+                  }
                   className="border p-2 w-full rounded"
                   required
                 >
-                  {displayCategories.map(c => (
-                    <option key={c.id} value={c.name}>{c.name}</option>
+                  {displayCategories.map((c) => (
+                    <option key={c.id} value={c.name}>
+                      {c.name}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -1708,6 +1786,18 @@ export default function App() {
           <span className="text-stone-500 text-sm">売上合計 (税込)</span>
           <span className="font-mono text-lg font-bold">
             ¥{aggregated.summary.totalSales.toLocaleString()}
+          </span>
+        </div>
+        {/* ★ 追加：現金とPayPayの売上内訳 ★ */}
+        <div className="flex justify-between text-xs text-stone-500 bg-stone-50 p-2 rounded mt-1">
+          <span>
+            現金: ¥{aggregated.summary.totalCashSales.toLocaleString()}
+          </span>
+          <span>
+            PayPay:{" "}
+            <span className="text-red-500 font-bold">
+              ¥{aggregated.summary.totalPaypaySales.toLocaleString()}
+            </span>
           </span>
         </div>
         <div className="text-xs text-stone-400 text-right mb-2">
@@ -1953,7 +2043,11 @@ export default function App() {
                                     hour: "2-digit",
                                     minute: "2-digit",
                                   })}
-                                  {o.paymentMethod === 'paypay' && <span className="ml-2 text-[10px] bg-red-100 text-red-600 px-1 rounded">PayPay</span>}
+                                  {o.paymentMethod === "paypay" && (
+                                    <span className="ml-2 text-[10px] bg-red-100 text-red-600 px-1 rounded">
+                                      PayPay
+                                    </span>
+                                  )}
                                 </span>
                                 <span>
                                   ¥{o.total}{" "}
@@ -2044,22 +2138,26 @@ export default function App() {
           </button>
         </div>
 
-        {/* ★追加：カテゴリ切り替えタブ */}
+        {/* カテゴリ切り替えタブ */}
         <div className="flex bg-stone-200 p-1 rounded-lg mb-4 overflow-x-auto gap-1">
           <button
             onClick={() => setSelectedCategory("all")}
             className={`px-4 py-2 rounded-md text-sm font-bold transition-all whitespace-nowrap ${
-              selectedCategory === "all" ? "bg-white text-orange-600 shadow" : "text-stone-500 hover:bg-stone-300"
+              selectedCategory === "all"
+                ? "bg-white text-orange-600 shadow"
+                : "text-stone-500 hover:bg-stone-300"
             }`}
           >
             すべて
           </button>
-          {displayCategories.map(cat => (
+          {displayCategories.map((cat) => (
             <button
               key={cat.id}
               onClick={() => setSelectedCategory(cat.name)}
               className={`px-4 py-2 rounded-md text-sm font-bold transition-all whitespace-nowrap ${
-                selectedCategory === cat.name ? "bg-white text-orange-600 shadow" : "text-stone-500 hover:bg-stone-300"
+                selectedCategory === cat.name
+                  ? "bg-white text-orange-600 shadow"
+                  : "text-stone-500 hover:bg-stone-300"
               }`}
             >
               {cat.name}
@@ -2068,46 +2166,51 @@ export default function App() {
         </div>
 
         <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-          {/* ★修正：選択されたカテゴリのメニューだけを表示 */}
+          {/* 選択されたカテゴリのメニューだけを表示 */}
           {menuItems
-            .filter(item => {
+            .filter((item) => {
               if (selectedCategory === "all") return true;
-              // 新しいカテゴリ形式、または古いタイプ(food等)を照らし合わせる
-              const itemCatName = item.category || LEGACY_CATEGORY_MAP[item.type] || '未分類';
+              const itemCatName =
+                item.category || LEGACY_CATEGORY_MAP[item.type] || "未分類";
               return itemCatName === selectedCategory;
             })
             .map((item) => (
-            <button
-              key={item.id}
-              onClick={() => {
-                if (item.hasSets) {
-                  setSelectedItem(item);
-                } else {
-                  addToCart(item, item.isFixedSet ? "setB" : "single", false);
-                }
-              }}
-              disabled={isTakeoutMode && item.canTakeout === false}
-              className={`p-4 rounded-xl text-left transition-all active:scale-95 shadow-sm border border-stone-100 flex flex-col justify-between h-32 ${
-                item.imageColor
-              } ${
-                isTakeoutMode && item.canTakeout === false
-                  ? "opacity-30 cursor-not-allowed"
-                  : ""
-              } relative`}
-            >
-              {item.isTakeoutOnly && (
-                <span className="absolute top-2 right-2 bg-green-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
-                  <Package size={10} /> Takeout Only
+              <button
+                key={item.id}
+                onClick={() => {
+                  if (
+                    item.hasSets ||
+                    item.priceSetA ||
+                    item.priceSetB ||
+                    item.priceDessertSet
+                  ) {
+                    setSelectedItem(item);
+                  } else {
+                    addToCart(item, item.isFixedSet ? "setB" : "single", false);
+                  }
+                }}
+                disabled={isTakeoutMode && item.canTakeout === false}
+                className={`p-4 rounded-xl text-left transition-all active:scale-95 shadow-sm border border-stone-100 flex flex-col justify-between h-32 ${
+                  item.imageColor
+                } ${
+                  isTakeoutMode && item.canTakeout === false
+                    ? "opacity-30 cursor-not-allowed"
+                    : ""
+                } relative`}
+              >
+                {item.isTakeoutOnly && (
+                  <span className="absolute top-2 right-2 bg-green-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                    <Package size={10} /> Takeout Only
+                  </span>
+                )}
+                <span className="font-bold text-stone-800 leading-tight">
+                  {item.name}
                 </span>
-              )}
-              <span className="font-bold text-stone-800 leading-tight">
-                {item.name}
-              </span>
-              <span className="font-mono text-stone-600 bg-white/50 px-2 py-1 rounded w-fit text-sm">
-                ¥{item.basePrice.toLocaleString()}~
-              </span>
-            </button>
-          ))}
+                <span className="font-mono text-stone-600 bg-white/50 px-2 py-1 rounded w-fit text-sm">
+                  ¥{item.basePrice.toLocaleString()}~
+                </span>
+              </button>
+            ))}
           <button
             onClick={() => {
               setActiveTab("menu");
@@ -2270,7 +2373,9 @@ export default function App() {
                     </>
                   )}
 
-                  {selectedItem.priceDessertSet && (
+                  {(selectedItem.priceDessertSet ||
+                    (selectedItem.hasSets &&
+                      selectedItem.type === "dessert")) && (
                     <button
                       onClick={() =>
                         addToCart(selectedItem, "setDessert", isTakeoutMode)
@@ -2363,7 +2468,7 @@ export default function App() {
           </div>
         </div>
       )}
-      
+
       {/* お会計モーダル */}
       {isCheckoutModalOpen && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
