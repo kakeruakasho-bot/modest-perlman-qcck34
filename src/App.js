@@ -29,44 +29,29 @@ import {
   PlusCircle,
   Trash2,
   User,
-  Sun,
-  Cloud,
-  CloudRain,
   ShoppingBag,
   Home,
   ChefHat,
   History,
   TrendingUp,
   DollarSign,
-  ChevronDown,
-  ChevronUp,
   ChevronLeft,
   ChevronRight,
-  Receipt,
   AlertTriangle,
   Settings,
   Edit2,
-  X,
   RefreshCw,
-  Wallet,
   PiggyBank,
   Lock,
   Loader2,
   Landmark,
-  ArrowUpCircle,
-  ArrowDownCircle,
-  MinusCircle,
   ArrowRightCircle,
   BarChart3,
   Download,
-  Plus,
   CalendarDays,
   CheckCircle2,
-  Store,
   Zap,
   Package,
-  Save,
-  Tags,
 } from "lucide-react";
 
 // --- Firebase Initialization ---
@@ -204,7 +189,6 @@ export default function App() {
   const [isTakeoutMode, setIsTakeoutMode] = useState(false);
   const [expenseType, setExpenseType] = useState("expense");
 
-  // --- タブ分類・カテゴリ管理用の状態 ---
   const [categories, setCategories] = useState([]);
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
@@ -222,10 +206,8 @@ export default function App() {
   const [selectedItem, setSelectedItem] = useState(null);
   const [isCheckoutModalOpen, setIsCheckoutModalOpen] = useState(false);
   const [editingMenu, setEditingMenu] = useState(null);
-
   const [editingFund, setEditingFund] = useState(null);
 
-  // 画面に表示するカテゴリ（Firebaseになければデフォルトを一時的に表示）
   const displayCategories =
     categories.length > 0
       ? categories
@@ -236,7 +218,6 @@ export default function App() {
           { id: "f4", name: "惣菜" },
         ];
 
-  // Set initial editing options when opening menu editor
   useEffect(() => {
     if (editingMenu && editingMenu.options) {
       setEditingOptions(editingMenu.options);
@@ -244,10 +225,6 @@ export default function App() {
       setEditingOptions([]);
     }
   }, [editingMenu]);
-
-  useEffect(() => {
-    // 処理なし
-  }, [selectedItem]);
 
   useEffect(() => {
     const script = document.createElement("script");
@@ -318,7 +295,6 @@ export default function App() {
         setPermissionError(true);
     };
 
-    // --- カテゴリの取得 ---
     const qCategories = query(
       collection(db, "artifacts", appId, "public", "data", "categories")
     );
@@ -329,7 +305,6 @@ export default function App() {
           id: doc.id,
           ...doc.data(),
         }));
-        // 作成順（または指定の並び順）でソート
         data.sort((a, b) => {
           if (a.order !== undefined && b.order !== undefined)
             return a.order - b.order;
@@ -438,7 +413,7 @@ export default function App() {
     };
   }, [user]);
 
-  // --- Category Management Functions ---
+  // --- Logic Helpers ---
   const initializeCategories = async () => {
     const defaults = ["食事", "ドリンク", "スイーツ", "惣菜"];
     const batch = writeBatch(db);
@@ -491,7 +466,6 @@ export default function App() {
     }
   };
 
-  // --- Logic Helpers ---
   const confirmDelete = (e, collectionName, id, message) => {
     e.stopPropagation();
     setDeleteModal({ collection: collectionName, id: id, message: message });
@@ -524,23 +498,18 @@ export default function App() {
       )
     )
       return;
-
     setLoadingStatus("データ修正中...");
     try {
       const q = query(
         collection(db, "artifacts", appId, "public", "data", "orders")
       );
       const querySnapshot = await getDocs(q);
-
       let updateCount = 0;
       const batch = writeBatch(db);
-
       querySnapshot.forEach((docSnap) => {
         const order = docSnap.data();
         let isModified = false;
-
         if (!order.items) return;
-
         const updatedItems = order.items.map((item) => {
           if (item.name === targetName && !item.isTakeout) {
             isModified = true;
@@ -548,7 +517,6 @@ export default function App() {
           }
           return item;
         });
-
         if (isModified) {
           const docRef = doc(
             db,
@@ -563,7 +531,6 @@ export default function App() {
           updateCount++;
         }
       });
-
       if (updateCount > 0) {
         await batch.commit();
         alert(
@@ -584,11 +551,12 @@ export default function App() {
     if (amount <= 0) return;
     if (
       !window.confirm(
-        `${typeName} ¥${amount.toLocaleString()} を\n「資金（ランタナ預かり金）」に移動しますか？`
+        `${typeName} ¥${(
+          amount || 0
+        ).toLocaleString()} を\n「資金（ランタナ預かり金）」に移動しますか？`
       )
     )
       return;
-
     try {
       await addDoc(
         collection(db, "artifacts", appId, "public", "data", "funds"),
@@ -610,7 +578,6 @@ export default function App() {
   const updateFund = async (e) => {
     e.preventDefault();
     if (!editingFund) return;
-
     try {
       await updateDoc(
         doc(db, "artifacts", appId, "public", "data", "funds", editingFund.id),
@@ -633,17 +600,16 @@ export default function App() {
     if (salaryPerPerson <= 0) return;
     if (
       !window.confirm(
-        `高橋さん、浜田さんに\nそれぞれ ¥${salaryPerPerson.toLocaleString()} の給料を記録しますか？\n（経費として保存されます）`
+        `高橋さん、浜田さんに\nそれぞれ ¥${(
+          salaryPerPerson || 0
+        ).toLocaleString()} の給料を記録しますか？\n（経費として保存されます）`
       )
     )
       return;
-
     const today = new Date().toISOString().split("T")[0];
     const monthLabel = currentMonth.split("-")[1];
-
     try {
       const batch = writeBatch(db);
-
       const docRef1 = doc(
         collection(db, "artifacts", appId, "public", "data", "expenses")
       );
@@ -655,7 +621,6 @@ export default function App() {
         category: "給料分配",
         createdAt: serverTimestamp(),
       });
-
       const docRef2 = doc(
         collection(db, "artifacts", appId, "public", "data", "expenses")
       );
@@ -667,7 +632,6 @@ export default function App() {
         category: "給料分配",
         createdAt: serverTimestamp(),
       });
-
       await batch.commit();
       alert("給料を経費（給料分配）として記録しました！");
     } catch (err) {
@@ -681,11 +645,10 @@ export default function App() {
       "日付,売上合計(税込),税対象(10%),税対象(8%),経費合計,高橋払,浜田払,ランタナ払,収支,メモ\n";
     const rows = aggregated.daily
       .map((row) => {
-        const profit = row.sales - row.expenses;
+        const profit = (row.sales || 0) - (row.expenses || 0);
         return `${row.date},${row.sales},${row.sales10},${row.sales8},${row.expenses},${row.takahashiPay},${row.hamadaPay},${row.lantanaPay},${profit},`;
       })
       .join("\n");
-
     const csvContent = "data:text/csv;charset=utf-8,\uFEFF" + header + rows;
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
@@ -702,7 +665,7 @@ export default function App() {
     const data = {
       name: formData.get("name"),
       basePrice: Number(formData.get("basePrice")),
-      category: formData.get("category"), // ★カテゴリ名を直接保存
+      category: formData.get("category"),
       hasSets: formData.get("hasSets") === "on",
       priceSetA: formData.get("priceSetA")
         ? Number(formData.get("priceSetA"))
@@ -718,20 +681,16 @@ export default function App() {
       imageColor: formData.get("imageColor"),
       options: editingOptions,
     };
-
-    // ★カテゴリに応じたボタンの色を自動設定（自分で変えていない場合）
     if (!data.imageColor) {
       if (data.category === "食事") data.imageColor = "bg-orange-100";
       else if (data.category === "ドリンク") data.imageColor = "bg-blue-50";
       else if (data.category === "スイーツ") data.imageColor = "bg-pink-100";
       else if (data.category === "惣菜") data.imageColor = "bg-green-100";
-      else data.imageColor = "bg-stone-100"; // その他の新カテゴリはシックな色に
+      else data.imageColor = "bg-stone-100";
     }
-
     if (data.isTakeoutOnly) {
       data.canTakeout = true;
     }
-
     try {
       if (editingMenu?.id && !editingMenu.id.startsWith("init-")) {
         await updateDoc(
@@ -779,10 +738,8 @@ export default function App() {
       optionPrice += opt.price;
       optionLabels.push(opt.label);
     });
-
     const price = base + optionPrice;
     const isTakeout = item.isTakeoutOnly || isTakeoutMode;
-
     const newItem = {
       tempId: Date.now(),
       itemId: item.id,
@@ -797,6 +754,7 @@ export default function App() {
     setSelectedItem(null);
     setSelectedOptions([]);
   };
+
   const removeFromCart = (tempId) =>
     setCart(cart.filter((c) => c.tempId !== tempId));
   const calculateTotal = () => cart.reduce((sum, item) => sum + item.price, 0);
@@ -818,7 +776,6 @@ export default function App() {
         collection(db, "artifacts", appId, "public", "data", "orders"),
         orderData
       );
-
       if (paymentMethod === "paypay") {
         const fee = Math.floor(totalAmount * 0.0198);
         await addDoc(
@@ -833,7 +790,6 @@ export default function App() {
           }
         );
       }
-
       setCart([]);
       setIsCheckoutModalOpen(false);
       alert(
@@ -860,15 +816,10 @@ export default function App() {
       expenseType === "refund"
         ? -Math.abs(Number(expenseForm.amount))
         : Math.abs(Number(expenseForm.amount));
-
     try {
       await addDoc(
         collection(db, "artifacts", appId, "public", "data", "expenses"),
-        {
-          ...expenseForm,
-          amount: finalAmount,
-          createdAt: serverTimestamp(),
-        }
+        { ...expenseForm, amount: finalAmount, createdAt: serverTimestamp() }
       );
       setExpenseForm({ ...expenseForm, item: "", amount: "" });
       setExpenseType("expense");
@@ -951,18 +902,16 @@ export default function App() {
 
   const getAggregatedData = () => {
     const dataByDate = {};
-    let totalSalesAll = 0;
-    let totalExpensesAll = 0;
-    let totalTax10Sales = 0;
-    let totalTax8Sales = 0;
-
-    // ★追加: PayPayと現金の売上を分けるための変数
-    let totalPaypaySales = 0;
-    let totalCashSales = 0;
-
-    let totalTakahashiPay = 0;
-    let totalHamadaPay = 0;
-    let totalLantanaPay = 0;
+    let totalSalesAll = 0,
+      totalExpensesAll = 0,
+      totalTax10Sales = 0,
+      totalTax8Sales = 0;
+    let totalPaypaySales = 0,
+      totalCashSales = 0,
+      totalPaypayFee = 0;
+    let totalTakahashiPay = 0,
+      totalHamadaPay = 0,
+      totalLantanaPay = 0;
 
     const targetOrders = orders.filter((o) => o.date.startsWith(currentMonth));
     const targetExpenses = expenses.filter((e) =>
@@ -977,8 +926,8 @@ export default function App() {
           sales: 0,
           sales10: 0,
           sales8: 0,
-          paypaySales: 0, // ★日ごとのPayPay売上
-          cashSales: 0, // ★日ごとの現金売上
+          paypaySales: 0,
+          cashSales: 0,
           expenses: 0,
           takahashiPay: 0,
           hamadaPay: 0,
@@ -989,22 +938,21 @@ export default function App() {
           expenseDetails: [],
           rawOrders: [],
         };
-
-      dataByDate[d].sales += order.total;
-      totalSalesAll += order.total;
+      const currentOrderTotal = order.total || 0;
+      dataByDate[d].sales += currentOrderTotal;
+      totalSalesAll += currentOrderTotal;
       dataByDate[d].orderCount += 1;
       dataByDate[d].rawOrders.push(order);
 
-      // ★追加: 支払方法ごとに売上を振り分け
       if (order.paymentMethod === "paypay") {
-        dataByDate[d].paypaySales += order.total;
-        totalPaypaySales += order.total;
+        dataByDate[d].paypaySales += currentOrderTotal;
+        totalPaypaySales += currentOrderTotal;
       } else {
-        dataByDate[d].cashSales += order.total;
-        totalCashSales += order.total;
+        dataByDate[d].cashSales += currentOrderTotal;
+        totalCashSales += currentOrderTotal;
       }
 
-      if (order.items)
+      if (order.items) {
         order.items.forEach((item) => {
           const key =
             item.name +
@@ -1017,7 +965,6 @@ export default function App() {
             };
           dataByDate[d].itemCounts[key].count += 1;
           dataByDate[d].itemCounts[key].amount += item.price;
-
           if (item.isTakeout) {
             dataByDate[d].sales8 += item.price;
             totalTax8Sales += item.price;
@@ -1026,6 +973,7 @@ export default function App() {
             totalTax10Sales += item.price;
           }
         });
+      }
     });
 
     targetExpenses.forEach((exp) => {
@@ -1048,39 +996,42 @@ export default function App() {
           expenseDetails: [],
           rawOrders: [],
         };
-
-      dataByDate[d].expenses += exp.amount;
+      const expAmount = exp.amount || 0;
+      dataByDate[d].expenses += expAmount;
       dataByDate[d].expenseDetails.push(exp);
 
-      if (exp.category !== "給料分配") {
-        totalExpensesAll += exp.amount;
-        if (exp.payer === "高橋") totalTakahashiPay += exp.amount;
-        if (exp.payer === "浜田") totalHamadaPay += exp.amount;
-        if (exp.payer === "ランタナ") totalLantanaPay += exp.amount;
+      if (
+        exp.item &&
+        typeof exp.item === "string" &&
+        exp.item.includes("PayPay決済手数料")
+      ) {
+        totalPaypayFee += expAmount;
       }
 
-      if (exp.payer === "高橋") dataByDate[d].takahashiPay += exp.amount;
-      if (exp.payer === "浜田") dataByDate[d].hamadaPay += exp.amount;
-      if (exp.payer === "ランタナ") dataByDate[d].lantanaPay += exp.amount;
+      if (exp.category !== "給料分配") {
+        totalExpensesAll += expAmount;
+        if (exp.payer === "高橋") totalTakahashiPay += expAmount;
+        if (exp.payer === "浜田") totalHamadaPay += expAmount;
+        if (exp.payer === "ランタナ") totalLantanaPay += expAmount;
+      }
+
+      if (exp.payer === "高橋") dataByDate[d].takahashiPay += expAmount;
+      if (exp.payer === "浜田") dataByDate[d].hamadaPay += expAmount;
+      if (exp.payer === "ランタナ") dataByDate[d].lantanaPay += expAmount;
     });
 
     const sortedData = Object.values(dataByDate).sort((a, b) =>
       b.date.localeCompare(a.date)
     );
-
     const tax8 = Math.floor((totalTax8Sales / 1.08) * 0.08);
     const tax10 = Math.floor((totalTax10Sales / 1.1) * 0.1);
     const totalTax = tax8 + tax10;
-
     const profitBeforeTax = totalSalesAll - totalExpensesAll;
     const profitAfterTax = profitBeforeTax - totalTax;
-
     const baseProfit = Math.max(0, profitAfterTax);
-
     const defaultSalaryPerPerson = Math.floor(baseProfit / 2 / 1000) * 1000;
     const finalSalaryPerPerson =
       manualSalary !== null ? manualSalary : defaultSalaryPerPerson;
-
     const lantanaSavings = profitBeforeTax - finalSalaryPerPerson * 2;
 
     const transferredLantanaSavings = funds
@@ -1088,42 +1039,37 @@ export default function App() {
         (f) =>
           f.date.startsWith(currentMonth) &&
           f.type === "入金" &&
-          f.note.includes("端数")
+          (f.note || "").includes("端数")
       )
-      .reduce((sum, f) => sum + f.amount, 0);
-
+      .reduce((sum, f) => sum + (f.amount || 0), 0);
     const transferredTax = funds
       .filter(
         (f) =>
           f.date.startsWith(currentMonth) &&
           f.type === "入金" &&
-          f.note.includes("税金")
+          (f.note || "").includes("税金")
       )
-      .reduce((sum, f) => sum + f.amount, 0);
-
+      .reduce((sum, f) => sum + (f.amount || 0), 0);
     const savingOnly = lantanaSavings - totalTax;
-
     const remainingLantanaSavings = savingOnly - transferredLantanaSavings;
     const remainingTax = totalTax - transferredTax;
-
-    const totalFundsAdded = funds.reduce((sum, f) => sum + f.amount, 0);
+    const totalFundsAdded = funds.reduce((sum, f) => sum + (f.amount || 0), 0);
     const totalLantanaExpenses = expenses
       .filter((e) => e.payer === "ランタナ")
-      .reduce((sum, e) => sum + e.amount, 0);
+      .reduce((sum, e) => sum + (e.amount || 0), 0);
     const currentFundBalance = totalFundsAdded - totalLantanaExpenses;
-
     const totalNetSales = totalSalesAll - totalTax;
-
     const totalTaxFund = funds
-      .filter((f) => f.note.includes("税金"))
-      .reduce((sum, f) => sum + f.amount, 0);
+      .filter((f) => (f.note || "").includes("税金"))
+      .reduce((sum, f) => sum + (f.amount || 0), 0);
 
     return {
       daily: sortedData,
       summary: {
         totalSales: totalSalesAll,
-        totalPaypaySales, // ★追加
-        totalCashSales, // ★追加
+        totalPaypaySales,
+        totalCashSales,
+        totalPaypayFee,
         totalExpenses: totalExpensesAll,
         totalTakahashiPay,
         totalHamadaPay,
@@ -1157,7 +1103,6 @@ export default function App() {
   const chartData = useMemo(() => {
     const today = new Date();
     const data = [];
-
     if (analysisPeriod === "week") {
       for (let i = 6; i >= 0; i--) {
         const d = new Date(today);
@@ -1165,7 +1110,7 @@ export default function App() {
         const dateStr = d.toISOString().split("T")[0];
         const val = orders
           .filter((o) => o.date === dateStr)
-          .reduce((s, o) => s + o.total, 0);
+          .reduce((s, o) => s + (o.total || 0), 0);
         data.push({
           label: `${d.getMonth() + 1}/${d.getDate()}`,
           value: val,
@@ -1181,7 +1126,7 @@ export default function App() {
         ).padStart(2, "0")}`;
         const val = orders
           .filter((o) => o.date === dateStr)
-          .reduce((s, o) => s + o.total, 0);
+          .reduce((s, o) => s + (o.total || 0), 0);
         data.push({ label: `${i}`, value: val, fullDate: dateStr });
       }
     } else if (analysisPeriod === "year") {
@@ -1192,7 +1137,7 @@ export default function App() {
         ).padStart(2, "0")}`;
         const monthlySales = orders
           .filter((o) => o.date.startsWith(monthStr))
-          .reduce((s, o) => s + o.total, 0);
+          .reduce((s, o) => s + (o.total || 0), 0);
         data.push({
           label: `${d.getMonth() + 1}月`,
           value: monthlySales,
@@ -1256,7 +1201,7 @@ export default function App() {
                     style={{ height }}
                   >
                     <div className="absolute -top-6 left-1/2 -translate-x-1/2 text-[9px] bg-stone-800 text-white px-1 rounded opacity-0 group-hover:opacity-100 whitespace-nowrap z-10">
-                      ¥{d.value.toLocaleString()}
+                      ¥{(d.value || 0).toLocaleString()}
                     </div>
                   </div>
                   <span className="text-[9px] text-stone-400 mt-1 whitespace-nowrap">
@@ -1291,7 +1236,9 @@ export default function App() {
                   <div
                     className="h-full bg-orange-400"
                     style={{
-                      width: `${(count / aggregated.menuRanking[0][1]) * 100}%`,
+                      width: `${
+                        (count / (aggregated.menuRanking[0][1] || 1)) * 100
+                      }%`,
                     }}
                   ></div>
                 </div>
@@ -1310,13 +1257,13 @@ export default function App() {
           <Landmark size={20} className="text-green-600" /> ランタナ預り金残高
         </h3>
         <div className="text-4xl font-mono font-bold text-green-700">
-          ¥{aggregated.fundBalance.toLocaleString()}
+          ¥{(aggregated.fundBalance || 0).toLocaleString()}
         </div>
         <div className="mt-4 pt-3 border-t border-green-200 text-xs text-stone-500">
           <div className="flex justify-between items-center mb-1">
             <span>うち 税金積立累計</span>
             <span className="font-bold text-red-500">
-              ¥{aggregated.totalTaxFund.toLocaleString()}
+              ¥{(aggregated.totalTaxFund || 0).toLocaleString()}
             </span>
           </div>
           <div className="flex justify-between items-center">
@@ -1324,26 +1271,24 @@ export default function App() {
             <span className="font-bold text-stone-700">
               ¥
               {(
-                aggregated.fundBalance - aggregated.totalTaxFund
+                (aggregated.fundBalance || 0) - (aggregated.totalTaxFund || 0)
               ).toLocaleString()}
             </span>
           </div>
-
           <div className="text-xs text-stone-400 mt-2 border-t pt-2 space-y-1">
             <div className="flex justify-between">
               <span>資金移動計 (＋)</span>
-              <span>¥{aggregated.totalFundsAdded.toLocaleString()}</span>
+              <span>¥{(aggregated.totalFundsAdded || 0).toLocaleString()}</span>
             </div>
             <div className="flex justify-between">
               <span>経費支払(ランタナ) (－)</span>
               <span className="text-red-500">
-                ¥{aggregated.totalLantanaExpenses.toLocaleString()}
+                ¥{(aggregated.totalLantanaExpenses || 0).toLocaleString()}
               </span>
             </div>
           </div>
         </div>
       </div>
-
       <Card className="p-6">
         <h2 className="text-xl font-bold text-stone-700 mb-6 flex items-center gap-2">
           <RefreshCw className="text-orange-600" /> 資金の移動を記録
@@ -1417,7 +1362,8 @@ export default function App() {
                   f.amount >= 0 ? "text-green-600" : "text-red-600"
                 }`}
               >
-                {f.amount >= 0 ? "+" : ""}¥{Number(f.amount).toLocaleString()}
+                {f.amount >= 0 ? "+" : ""}¥
+                {Number(f.amount || 0).toLocaleString()}
               </span>
               <button
                 onClick={() => setEditingFund(f)}
@@ -1435,8 +1381,6 @@ export default function App() {
           </div>
         ))}
       </div>
-
-      {/* 資金履歴編集モーダル */}
       {editingFund && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white p-6 rounded-xl w-full max-w-sm">
@@ -1498,11 +1442,12 @@ export default function App() {
       <div className="flex justify-between mb-4">
         <h2 className="font-bold">メニュー管理</h2>
         <div className="flex gap-2">
+          {/* 安全なボタンにしました */}
           <Button
             variant="secondary"
             onClick={() => setIsCategoryModalOpen(true)}
           >
-            <Tags size={16} /> タブの編集
+            タブの編集
           </Button>
           <Button onClick={() => setEditingMenu({})}>新規追加</Button>
         </div>
@@ -1516,7 +1461,9 @@ export default function App() {
             <div>
               <span className="font-bold">{m.name}</span>
               <span className="ml-2 text-[10px] bg-stone-100 text-stone-500 px-2 py-0.5 rounded">
-                {m.category || LEGACY_CATEGORY_MAP[m.type] || "未分類"}
+                {m.category ||
+                  LEGACY_CATEGORY_MAP[m.type || "food"] ||
+                  "未分類"}
               </span>
             </div>
             <div className="flex gap-2 items-center">
@@ -1543,18 +1490,15 @@ export default function App() {
         ))}
       </div>
 
-      {/* タブ分類（カテゴリ）編集モーダル */}
       {isCategoryModalOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white p-6 rounded-xl w-full max-w-sm">
             <h3 className="font-bold mb-2 flex items-center gap-2">
-              <Settings size={18} className="text-stone-500" />
-              タブ分類（カテゴリ）の編集
+              <Settings size={18} className="text-stone-500" /> タブ分類の編集
             </h3>
             <p className="text-[10px] text-stone-500 mb-4">
               レジ画面の上部に表示されるタブを自由にカスタマイズできます。
             </p>
-
             {categories.length === 0 && (
               <div className="mb-4 bg-orange-50 p-4 rounded-lg border border-orange-200 text-center">
                 <p className="text-sm text-orange-800 font-bold mb-2">
@@ -1571,7 +1515,6 @@ export default function App() {
                 </Button>
               </div>
             )}
-
             <div className="space-y-2 mb-6 max-h-60 overflow-y-auto">
               {categories.map((c, i) => (
                 <div
@@ -1591,7 +1534,6 @@ export default function App() {
                 </div>
               ))}
             </div>
-
             <form
               onSubmit={addCategory}
               className="flex gap-2 mb-6 border-t pt-4 border-stone-200"
@@ -1605,7 +1547,6 @@ export default function App() {
               />
               <Button type="submit">追加</Button>
             </form>
-
             <Button
               variant="secondary"
               onClick={() => setIsCategoryModalOpen(false)}
@@ -1637,7 +1578,6 @@ export default function App() {
                 className="border p-2 w-full rounded"
                 required
               />
-
               <div>
                 <label className="text-sm font-bold text-stone-500 block mb-1">
                   カテゴリ (タブ分類)
@@ -1646,7 +1586,7 @@ export default function App() {
                   name="category"
                   defaultValue={
                     editingMenu.category ||
-                    LEGACY_CATEGORY_MAP[editingMenu.type] ||
+                    LEGACY_CATEGORY_MAP[editingMenu.type || "food"] ||
                     displayCategories[0]?.name ||
                     ""
                   }
@@ -1660,8 +1600,6 @@ export default function App() {
                   ))}
                 </select>
               </div>
-
-              {/* オプション設定フォーム */}
               <div className="border-t pt-4">
                 <label className="text-sm font-bold">オプション設定</label>
                 <button
@@ -1716,7 +1654,6 @@ export default function App() {
                   <p className="text-xs text-gray-400 mt-1">オプションなし</p>
                 )}
               </div>
-
               <div className="border-t pt-4 space-y-2">
                 <label className="flex items-center gap-2 text-sm font-bold">
                   <input
@@ -1776,8 +1713,6 @@ export default function App() {
         </button>
       </div>
       <MonthNavigator currentMonth={currentMonth} onChange={changeMonth} />
-
-      {/* 1. 月間収支 */}
       <div className="bg-white p-4 rounded-xl border border-stone-200 shadow-sm space-y-3">
         <h3 className="font-bold text-stone-700 border-b pb-2 mb-2">
           1. 月間収支
@@ -1785,65 +1720,70 @@ export default function App() {
         <div className="flex justify-between items-center">
           <span className="text-stone-500 text-sm">売上合計 (税込)</span>
           <span className="font-mono text-lg font-bold">
-            ¥{aggregated.summary.totalSales.toLocaleString()}
+            ¥{(aggregated.summary.totalSales || 0).toLocaleString()}
           </span>
         </div>
-        {/* ★ 追加：現金とPayPayの売上内訳 ★ */}
         <div className="flex justify-between text-xs text-stone-500 bg-stone-50 p-2 rounded mt-1">
           <span>
-            現金: ¥{aggregated.summary.totalCashSales.toLocaleString()}
+            現金: ¥{(aggregated.summary.totalCashSales || 0).toLocaleString()}
           </span>
           <span>
             PayPay:{" "}
             <span className="text-red-500 font-bold">
-              ¥{aggregated.summary.totalPaypaySales.toLocaleString()}
+              ¥{(aggregated.summary.totalPaypaySales || 0).toLocaleString()}
             </span>
           </span>
         </div>
         <div className="text-xs text-stone-400 text-right mb-2">
           (10%: ¥
           {aggregated.daily
-            .reduce((acc, d) => acc + d.sales10, 0)
+            .reduce((acc, d) => acc + (d.sales10 || 0), 0)
             .toLocaleString()}{" "}
           / 8%: ¥
           {aggregated.daily
-            .reduce((acc, d) => acc + d.sales8, 0)
+            .reduce((acc, d) => acc + (d.sales8 || 0), 0)
             .toLocaleString()}
           )
         </div>
-        <div className="flex justify-between items-center">
+        <div className="flex justify-between items-center mt-2">
           <span className="text-stone-500 text-sm">経費合計 (給料除く)</span>
           <span className="font-mono text-lg font-bold text-red-500">
-            -¥{aggregated.summary.totalExpenses.toLocaleString()}
+            -¥{(aggregated.summary.totalExpenses || 0).toLocaleString()}
           </span>
         </div>
-
+        {aggregated.summary.totalPaypayFee > 0 && (
+          <div className="flex justify-end text-xs text-red-400 mt-1 mb-2">
+            (うち PayPay手数料: -¥
+            {(aggregated.summary.totalPaypayFee || 0).toLocaleString()})
+          </div>
+        )}
         <div className="mt-2 pt-2 border-t border-dashed border-stone-200 text-xs text-stone-500">
           <div className="flex justify-between">
             <span>高橋 立替</span>
             <span>
-              ¥{aggregated.summary.totalTakahashiPay.toLocaleString()}
+              ¥{(aggregated.summary.totalTakahashiPay || 0).toLocaleString()}
             </span>
           </div>
           <div className="flex justify-between">
             <span>浜田 立替</span>
-            <span>¥{aggregated.summary.totalHamadaPay.toLocaleString()}</span>
+            <span>
+              ¥{(aggregated.summary.totalHamadaPay || 0).toLocaleString()}
+            </span>
           </div>
           <div className="flex justify-between">
             <span>ランタナ払</span>
-            <span>¥{aggregated.summary.totalLantanaPay.toLocaleString()}</span>
+            <span>
+              ¥{(aggregated.summary.totalLantanaPay || 0).toLocaleString()}
+            </span>
           </div>
         </div>
-
         <div className="border-t pt-2 flex justify-between items-center bg-stone-50 p-2 rounded">
           <span className="font-bold text-stone-700">粗利益</span>
           <span className="font-mono text-xl font-bold">
-            ¥{aggregated.summary.profit.toLocaleString()}
+            ¥{(aggregated.summary.profit || 0).toLocaleString()}
           </span>
         </div>
       </div>
-
-      {/* 2. 税金と配分原資 */}
       <div className="bg-white p-4 rounded-xl border border-stone-200 shadow-sm space-y-3">
         <h3 className="font-bold text-stone-700 border-b pb-2 mb-2">
           2. 税金と配分原資
@@ -1853,7 +1793,8 @@ export default function App() {
             <span className="text-stone-500 text-sm">消費税 (預り分)</span>
             {aggregated.summary.remainingTax > 0 ? (
               <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-bold">
-                未移動: ¥{aggregated.summary.remainingTax.toLocaleString()}
+                未移動: ¥
+                {(aggregated.summary.remainingTax || 0).toLocaleString()}
               </span>
             ) : (
               <span className="text-xs bg-green-100 text-green-600 px-2 py-0.5 rounded-full font-bold">
@@ -1862,7 +1803,7 @@ export default function App() {
             )}
           </div>
           <span className="font-mono text-lg font-bold">
-            ¥{aggregated.summary.totalTax.toLocaleString()}
+            ¥{(aggregated.summary.totalTax || 0).toLocaleString()}
           </span>
         </div>
         <div className="flex justify-end">
@@ -1880,19 +1821,17 @@ export default function App() {
             税金を資金へ移動
           </button>
         </div>
-
         <div className="border-t pt-2 flex justify-between items-center bg-blue-50 p-2 rounded">
           <span className="font-bold text-blue-800">配分原資 (税引後)</span>
           <span className="font-mono text-xl font-bold text-blue-900">
             ¥
             {(
-              aggregated.summary.profit - aggregated.summary.totalTax
+              (aggregated.summary.profit || 0) -
+              (aggregated.summary.totalTax || 0)
             ).toLocaleString()}
           </span>
         </div>
       </div>
-
-      {/* 3. 給料とお店の貯金 */}
       <div className="bg-white p-4 rounded-xl border-2 border-orange-200 shadow-sm relative overflow-hidden">
         <div className="absolute top-0 right-0 bg-orange-100 text-orange-700 text-[10px] font-bold px-2 py-1 rounded-bl-lg">
           原資÷2 (千円未満切捨)
@@ -1900,7 +1839,6 @@ export default function App() {
         <h3 className="font-bold text-orange-800 border-b border-orange-100 pb-2 mb-3">
           3. 給料とお店の貯金
         </h3>
-
         <div className="mb-4">
           <div className="flex justify-between items-center mb-1">
             <div className="flex items-center gap-2">
@@ -1908,7 +1846,7 @@ export default function App() {
               <span className="font-bold text-stone-700">給料 (1人あたり)</span>
             </div>
             <span className="font-mono text-2xl font-bold text-orange-600">
-              ¥{aggregated.summary.salaryPerPerson.toLocaleString()}
+              ¥{(aggregated.summary.salaryPerPerson || 0).toLocaleString()}
             </span>
           </div>
           <input
@@ -1931,7 +1869,6 @@ export default function App() {
             </button>
           </div>
         </div>
-
         <div className="border-t border-dashed border-stone-300 pt-3">
           <div className="flex justify-between items-center mb-1">
             <div className="flex items-center gap-2">
@@ -1941,13 +1878,15 @@ export default function App() {
               </span>
             </div>
             <span className="font-mono text-xl font-bold text-green-700">
-              ¥{aggregated.summary.lantanaSavings.toLocaleString()}
+              ¥{(aggregated.summary.lantanaSavings || 0).toLocaleString()}
             </span>
           </div>
           <div className="flex justify-between items-center">
             <span className="text-xs text-stone-400">
               移動済み: ¥
-              {aggregated.summary.transferredLantanaSavings.toLocaleString()}
+              {(
+                aggregated.summary.transferredLantanaSavings || 0
+              ).toLocaleString()}
             </span>
             <button
               onClick={() =>
@@ -1968,8 +1907,6 @@ export default function App() {
           </div>
         </div>
       </div>
-
-      {/* 日別リスト */}
       <div className="bg-white rounded-xl border border-stone-200 shadow-sm overflow-hidden mt-6">
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
@@ -1993,10 +1930,13 @@ export default function App() {
                   >
                     <td className="p-3">{row.date.slice(8)}日</td>
                     <td className="p-3 text-right">
-                      ¥{row.sales.toLocaleString()}
+                      ¥{(row.sales || 0).toLocaleString()}
                     </td>
                     <td className="p-3 text-right">
-                      ¥{(row.sales - row.expenses).toLocaleString()}
+                      ¥
+                      {(
+                        (row.sales || 0) - (row.expenses || 0)
+                      ).toLocaleString()}
                     </td>
                   </tr>
                   {expandedDate === row.date && (
@@ -2021,7 +1961,7 @@ export default function App() {
                                 {e.item}
                               </span>
                               <span>
-                                ¥{e.amount.toLocaleString()}{" "}
+                                ¥{(e.amount || 0).toLocaleString()}{" "}
                                 <button
                                   onClick={(ev) =>
                                     confirmDelete(ev, "expenses", e.id, "削除?")
@@ -2042,7 +1982,7 @@ export default function App() {
                                   ).toLocaleTimeString([], {
                                     hour: "2-digit",
                                     minute: "2-digit",
-                                  })}
+                                  })}{" "}
                                   {o.paymentMethod === "paypay" && (
                                     <span className="ml-2 text-[10px] bg-red-100 text-red-600 px-1 rounded">
                                       PayPay
@@ -2101,8 +2041,6 @@ export default function App() {
         <h2 className="text-xl font-bold text-stone-700 mb-4 flex items-center gap-2">
           <Utensils className="text-orange-600" /> メニュー
         </h2>
-
-        {/* 日付変更エリア */}
         <div className="bg-white p-3 rounded-xl border border-stone-200 mb-4 shadow-sm flex items-center justify-between">
           <div className="flex items-center gap-2 text-stone-600 font-bold text-sm">
             <CalendarDays size={18} />
@@ -2115,8 +2053,6 @@ export default function App() {
             className="bg-stone-50 border border-stone-300 rounded px-2 py-1 text-sm font-mono text-stone-700"
           />
         </div>
-
-        {/* テイクアウト切り替えスイッチ */}
         <div className="flex bg-stone-100 p-1 rounded-lg mb-4">
           <button
             onClick={() => setIsTakeoutMode(false)}
@@ -2137,8 +2073,6 @@ export default function App() {
             <ShoppingBag size={16} /> テイクアウト (8%)
           </button>
         </div>
-
-        {/* カテゴリ切り替えタブ */}
         <div className="flex bg-stone-200 p-1 rounded-lg mb-4 overflow-x-auto gap-1">
           <button
             onClick={() => setSelectedCategory("all")}
@@ -2164,14 +2098,14 @@ export default function App() {
             </button>
           ))}
         </div>
-
         <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-          {/* 選択されたカテゴリのメニューだけを表示 */}
           {menuItems
             .filter((item) => {
               if (selectedCategory === "all") return true;
               const itemCatName =
-                item.category || LEGACY_CATEGORY_MAP[item.type] || "未分類";
+                item.category ||
+                LEGACY_CATEGORY_MAP[item.type || "food"] ||
+                "未分類";
               return itemCatName === selectedCategory;
             })
             .map((item) => (
@@ -2207,7 +2141,7 @@ export default function App() {
                   {item.name}
                 </span>
                 <span className="font-mono text-stone-600 bg-white/50 px-2 py-1 rounded w-fit text-sm">
-                  ¥{item.basePrice.toLocaleString()}~
+                  ¥{(item.basePrice || 0).toLocaleString()}~
                 </span>
               </button>
             ))}
@@ -2330,7 +2264,6 @@ export default function App() {
                       ¥{getPrice(selectedItem, "single")}
                     </span>
                   </button>
-
                   {(selectedItem.hasSets ||
                     (selectedItem.priceSetA && selectedItem.priceSetB)) && (
                     <>
@@ -2372,7 +2305,6 @@ export default function App() {
                       </button>
                     </>
                   )}
-
                   {(selectedItem.priceDessertSet ||
                     (selectedItem.hasSets &&
                       selectedItem.type === "dessert")) && (
@@ -2397,7 +2329,6 @@ export default function App() {
                   )}
                 </div>
               </div>
-
               {selectedItem.options && selectedItem.options.length > 0 && (
                 <div>
                   <label className="text-sm font-bold text-stone-500 mb-2 block">
@@ -2449,7 +2380,6 @@ export default function App() {
                   </div>
                 </div>
               )}
-
               {selectedItem.canTakeout !== false && !isTakeoutMode && (
                 <div className="pt-4 border-t border-stone-100">
                   <p className="text-xs text-center text-stone-400 mb-2">
@@ -2468,8 +2398,6 @@ export default function App() {
           </div>
         </div>
       )}
-
-      {/* お会計モーダル */}
       {isCheckoutModalOpen && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl w-full max-w-sm p-6 text-center space-y-6">
@@ -2871,15 +2799,14 @@ export default function App() {
         <div className="h-full overflow-y-auto p-3 md:p-6 bg-stone-100">
           {activeTab === "pos" && renderPOS()}{" "}
           {activeTab === "expenses" && renderExpenses()}{" "}
-          {activeTab === "report" && renderReport()}{" "}
+          {activeTab === "report" && renderReport()}
           {activeTab === "history" && renderHistory()}{" "}
           {activeTab === "funds" && renderFunds()}{" "}
-          {activeTab === "menu" && renderMenuSettings()}{" "}
+          {activeTab === "menu" && renderMenuSettings()}
           {activeTab === "analysis" && renderAnalysis()}
         </div>
       </main>
 
-      {/* 削除確認モーダル（画面の真ん中にフワッと出るやつ） */}
       {deleteModal && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-white rounded-2xl w-full max-w-sm p-6 text-center space-y-4 shadow-xl">
