@@ -182,10 +182,11 @@ export default function App() {
   const [loadingStatus, setLoadingStatus] = useState("起動中...");
   const [showRetry, setShowRetry] = useState(false);
 
+  // ★ 印刷時の詳細表示トグル
   const [printDetails, setPrintDetails] = useState(true);
-  const [lantanaFundInput, setLantanaFundInput] = useState(0);
 
-  // ★ 残高調整モーダル用の状態
+  // ★ 資金入力・残高調整用の状態
+  const [lantanaFundInput, setLantanaFundInput] = useState(0);
   const [isAdjustModalOpen, setIsAdjustModalOpen] = useState(false);
   const [adjustTax, setAdjustTax] = useState("");
   const [adjustFund, setAdjustFund] = useState("");
@@ -221,6 +222,7 @@ export default function App() {
   const [editingMenu, setEditingMenu] = useState(null);
   const [editingFund, setEditingFund] = useState(null);
 
+  // ★ 絶対に消してはいけないフォームの初期設定（これが日報や帳簿エラーの原因でした！）
   const [expenseForm, setExpenseForm] = useState({
     date: new Date().toISOString().split("T")[0],
     item: "",
@@ -864,7 +866,6 @@ export default function App() {
     }
   };
 
-  // ★ 追加：残高を強制調整する関数
   const handleAdjustment = async (e) => {
     e.preventDefault();
     if (!user) return;
@@ -962,8 +963,6 @@ export default function App() {
       paypaySales = 0,
       cashSales = 0,
       paypayFee = 0;
-
-    // ★ 追加：それぞれの支払い者ごとの経費合計
     let totalTakahashiPay = 0,
       totalHamadaPay = 0,
       totalLantanaPay = 0;
@@ -1020,7 +1019,6 @@ export default function App() {
 
       if (exp.category !== "給料分配" && exp.category !== "雑収入・返金") {
         totalExpenses += Number(exp.amount || 0);
-        // ★ 各支払い者の集計
         if (exp.payer === "高橋") totalTakahashiPay += Number(exp.amount || 0);
         else if (exp.payer === "浜田")
           totalHamadaPay += Number(exp.amount || 0);
@@ -1093,7 +1091,7 @@ export default function App() {
         recordedFund,
         totalTakahashiPay,
         totalHamadaPay,
-        totalLantanaPay, // ★ サマリーに追加
+        totalLantanaPay,
       },
       fundBalance: currentFundBalance,
       totalTaxFund,
@@ -1315,7 +1313,6 @@ export default function App() {
               ¥{(aggregated.summary.totalExpenses || 0).toLocaleString()}
             </p>
 
-            {/* ★経費の内訳リストを追加 */}
             <div className="mt-3 pt-3 border-t border-stone-100 space-y-1.5 text-xs text-stone-600 print:text-black print:border-black">
               <div className="flex justify-between items-center">
                 <span className="flex items-center gap-1">
@@ -1650,7 +1647,6 @@ export default function App() {
 
   const renderFunds = () => (
     <div className="max-w-2xl mx-auto space-y-6 pb-20 animate-in fade-in duration-300">
-      {/* 資金の強制調整ボタン */}
       <div className="flex justify-end mb-4 z-10 relative">
         <button
           onClick={() => setIsAdjustModalOpen(true)}
@@ -1872,7 +1868,6 @@ export default function App() {
         </div>
       )}
 
-      {/* ★ 追加：残高調整モーダル */}
       {isAdjustModalOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in zoom-in-95 duration-200 print:hidden">
           <div className="bg-white rounded-3xl w-full max-w-md p-8 text-center space-y-6 shadow-2xl">
@@ -2401,6 +2396,132 @@ export default function App() {
           </div>
         </div>
       )}
+    </div>
+  );
+
+  const renderReport = () => (
+    <div className="max-w-2xl mx-auto space-y-6 pb-20 animate-in fade-in duration-300">
+      <Card className="p-6">
+        <h2 className="text-xl font-bold text-stone-700 mb-6 flex items-center gap-2">
+          <BookOpen className="text-orange-600" /> 今日の日報
+        </h2>
+        <form onSubmit={submitReport} className="space-y-5">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-[10px] font-bold text-stone-400 uppercase tracking-wider mb-1">
+                Date
+              </label>
+              <input
+                type="date"
+                required
+                value={reportForm.date}
+                onChange={(e) =>
+                  setReportForm({ ...reportForm, date: e.target.value })
+                }
+                className="w-full p-3 border border-stone-200 rounded-xl bg-stone-50 outline-none focus:ring-2 focus:ring-orange-500 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold text-stone-400 uppercase tracking-wider mb-1">
+                Weather
+              </label>
+              <div className="flex bg-stone-100 rounded-xl p-1">
+                {["晴れ", "曇り", "雨"].map((w) => (
+                  <button
+                    type="button"
+                    key={w}
+                    onClick={() => setReportForm({ ...reportForm, weather: w })}
+                    className={`flex-1 text-xs py-2 rounded-lg font-bold transition-all ${
+                      reportForm.weather === w
+                        ? "bg-white shadow-sm text-orange-600"
+                        : "text-stone-400 hover:bg-stone-50"
+                    }`}
+                  >
+                    {w}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div>
+            <label className="block text-[10px] font-bold text-stone-400 uppercase tracking-wider mb-1">
+              来店数（組/人）
+            </label>
+            <input
+              type="number"
+              value={reportForm.customerCount}
+              onChange={(e) =>
+                setReportForm({ ...reportForm, customerCount: e.target.value })
+              }
+              className="w-full p-3 border border-stone-200 rounded-xl bg-stone-50 outline-none focus:ring-2 focus:ring-orange-500 font-mono text-lg"
+              placeholder="人数を入力"
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] font-bold text-stone-400 uppercase tracking-wider mb-1">
+              業務メモ・日記
+            </label>
+            <textarea
+              value={reportForm.note}
+              onChange={(e) =>
+                setReportForm({ ...reportForm, note: e.target.value })
+              }
+              className="w-full p-4 border border-stone-200 rounded-xl bg-stone-50 outline-none focus:ring-2 focus:ring-orange-500 h-32 leading-relaxed"
+              placeholder="試作の感想、お客様の様子など..."
+            />
+          </div>
+          <Button
+            type="submit"
+            className="w-full py-4 text-base shadow-orange-200"
+          >
+            日報を保存
+          </Button>
+        </form>
+      </Card>
+      <div className="space-y-4">
+        <h3 className="font-bold text-stone-400 text-xs uppercase tracking-widest pl-2 mb-4">
+          Past Reports
+        </h3>
+        {reports.length === 0 ? (
+          <p className="text-center text-stone-400 py-8 text-sm">
+            まだ日報がありません
+          </p>
+        ) : (
+          reports.map((report) => (
+            <Card
+              key={report.id || Math.random()}
+              className="p-5 border-none shadow-sm hover:shadow-md transition-shadow"
+            >
+              <div className="flex justify-between items-center mb-3 border-b border-stone-100 pb-3">
+                <div className="flex items-center gap-3">
+                  <span className="font-bold text-xl font-mono text-stone-800">
+                    {report.date || ""}
+                  </span>
+                  <span className="text-xs bg-stone-100 px-3 py-1 rounded-lg text-stone-500 font-bold">
+                    {report.weather || ""} / {report.customerCount || 0}組
+                  </span>
+                </div>
+                <button
+                  onClick={(e) =>
+                    confirmDelete(
+                      e,
+                      "reports",
+                      report.id,
+                      "この日報を削除しますか？"
+                    )
+                  }
+                  className="p-2 text-stone-300 hover:text-red-500 bg-stone-50 rounded-xl transition-colors"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+              <p className="text-stone-600 text-sm leading-relaxed whitespace-pre-wrap">
+                {report.note || ""}
+              </p>
+            </Card>
+          ))
+        )}
+      </div>
     </div>
   );
 
