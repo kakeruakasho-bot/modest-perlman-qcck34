@@ -182,10 +182,7 @@ export default function App() {
   const [loadingStatus, setLoadingStatus] = useState("起動中...");
   const [showRetry, setShowRetry] = useState(false);
 
-  // ★ 印刷時の詳細表示トグル
   const [printDetails, setPrintDetails] = useState(true);
-
-  // ★ 資金入力・残高調整用の状態
   const [lantanaFundInput, setLantanaFundInput] = useState(0);
   const [isAdjustModalOpen, setIsAdjustModalOpen] = useState(false);
   const [adjustTax, setAdjustTax] = useState("");
@@ -222,7 +219,6 @@ export default function App() {
   const [editingMenu, setEditingMenu] = useState(null);
   const [editingFund, setEditingFund] = useState(null);
 
-  // ★ 絶対に消してはいけないフォームの初期設定（これが日報や帳簿エラーの原因でした！）
   const [expenseForm, setExpenseForm] = useState({
     date: new Date().toISOString().split("T")[0],
     item: "",
@@ -408,7 +404,6 @@ export default function App() {
     };
   }, [user]);
 
-  // --- Functions ---
   const changeMonth = (offset) => {
     const d = new Date(currentMonth + "-01");
     d.setMonth(d.getMonth() + offset);
@@ -631,18 +626,21 @@ export default function App() {
 
     try {
       const batch = writeBatch(db);
-      const today = new Date().toISOString().split("T")[0];
-      const monthLabel = String(currentMonth || "2026-01").split("-")[1];
+
+      const [y, m] = String(currentMonth || "2026-01").split("-");
+      const lastDay = new Date(y, m, 0).getDate();
+      const recordDate = `${y}-${m}-${String(lastDay).padStart(2, "0")}`;
+      const monthNum = parseInt(m, 10);
 
       if (taxAmount > 0) {
         const docRef = doc(
           collection(db, "artifacts", appId, "public", "data", "funds")
         );
         batch.set(docRef, {
-          date: today,
+          date: recordDate,
           amount: taxAmount,
           type: "入金",
-          note: `${monthLabel}月分 消費税預かり`,
+          note: `${monthNum}月分 消費税預かり`,
           createdAt: serverTimestamp(),
         });
       }
@@ -651,10 +649,10 @@ export default function App() {
           collection(db, "artifacts", appId, "public", "data", "funds")
         );
         batch.set(docRef, {
-          date: today,
+          date: recordDate,
           amount: fundAmount,
           type: "入金",
-          note: `${monthLabel}月分 利益からお店へ`,
+          note: `${monthNum}月分 利益からお店へ`,
           createdAt: serverTimestamp(),
         });
       }
@@ -663,8 +661,8 @@ export default function App() {
           collection(db, "artifacts", appId, "public", "data", "expenses")
         );
         batch.set(docRef1, {
-          date: today,
-          item: `${monthLabel}月分 給料(高橋)`,
+          date: recordDate,
+          item: `${monthNum}月分 給料(高橋)`,
           amount: salaryPerPerson,
           payer: "ランタナ",
           category: "給料分配",
@@ -674,8 +672,8 @@ export default function App() {
           collection(db, "artifacts", appId, "public", "data", "expenses")
         );
         batch.set(docRef2, {
-          date: today,
-          item: `${monthLabel}月分 給料(浜田)`,
+          date: recordDate,
+          item: `${monthNum}月分 給料(浜田)`,
           amount: salaryPerPerson,
           payer: "ランタナ",
           category: "給料分配",
@@ -1033,27 +1031,33 @@ export default function App() {
     const profitBeforeTax = totalSales - totalExpenses;
     const distributableProfit = Math.max(0, profitBeforeTax - totalTax);
 
+    const monthNum = parseInt(
+      String(currentMonth || "2026-01").split("-")[1],
+      10
+    );
+    const targetLabel = `${monthNum}月分`;
+
     const isClosed = safeExpenses.some(
       (e) =>
-        String(e.date || "").startsWith(currentMonth) &&
-        e.category === "給料分配"
+        e.category === "給料分配" && String(e.item || "").includes(targetLabel)
     );
     const recordedSalary =
       safeExpenses
         .filter(
           (e) =>
-            String(e.date || "").startsWith(currentMonth) &&
-            e.category === "給料分配"
+            e.category === "給料分配" &&
+            String(e.item || "").includes(targetLabel)
         )
         .reduce((sum, e) => sum + Number(e.amount || 0), 0) / 2;
 
     const recordedFund = safeFunds
       .filter(
         (f) =>
-          String(f.date || "").startsWith(currentMonth) &&
-          String(f.note || "").includes("利益からお店へ")
+          String(f.note || "").includes("利益からお店へ") &&
+          String(f.note || "").includes(targetLabel)
       )
       .reduce((sum, f) => sum + Number(f.amount || 0), 0);
+
     const totalFundsAdded = safeFunds.reduce(
       (sum, f) => sum + Number(f.amount || 0),
       0
@@ -2399,6 +2403,7 @@ export default function App() {
     </div>
   );
 
+  // ★ ここが抜けていました！日報画面の完全復活です！
   const renderReport = () => (
     <div className="max-w-2xl mx-auto space-y-6 pb-20 animate-in fade-in duration-300">
       <Card className="p-6">
